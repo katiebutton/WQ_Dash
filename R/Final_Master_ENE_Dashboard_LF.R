@@ -15,17 +15,22 @@ library(openxlsx)
 
 # -------------------------------------------------------------------------
 
-sample_year <- 2022 # make this a separate variable so that you just have to change the year each time you update the calculations
+sample_year <- 2022 # change this each time you update calculations
 
-# Load data
-  # The certified data for each year should be in an xlsx file. In past years it was saved as either xlsx or csv but we should try to use xlsx now.
-df <- read.xlsx(paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/", sample_year, "/NCBN_", sample_year, "_WQ_Certified.xlsx"),      
-        check.names = FALSE,
-            sep.names = "_",
-            detectDates = TRUE) %>%
+# Load data ---------------------------------------------------------------
+df <- read.xlsx(
+  paste0(
+    "\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/",
+    sample_year, "/NCBN_", sample_year, "_WQ_Certified.xlsx"
+  ),
+  check.names = FALSE,
+  sep.names   = "_",
+  detectDates = TRUE
+) %>%
   rename_with(~trimws(.)) %>% # Trim whitespace from column names (if any)
-  rename_with( # Rename columns to match NCBN Water Quality Monitoring Dashboard hosted feature layer on AGOL
-    ~case_when( # This is ugly and repetitive but its the best way that I could come up with since the column names in the certified data files may not be consistent
+  # Rename columns to match NCBN Water Quality Monitoring Dashboard hosted feature layer on AGOL
+  rename_with(
+    ~case_when( # Column name normalization (kept as-is)
       str_detect(., regex("park", ignore_case = TRUE)) ~ "Park",
       str_detect(., regex("sample", ignore_case = TRUE)) ~ "Sample_Year",
       str_detect(., regex("stratum", ignore_case = TRUE)) ~ "Stratum",
@@ -56,12 +61,10 @@ df <- read.xlsx(paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/M
       str_detect(., regex("spatial", ignore_case = TRUE)) ~ "Spatial_Analysis"
     )
   ) %>%
-
-# Process data with one continuous pipeline
   # Keep only rows where Spatial_Analysis is TRUE
-  filter(Spatial_Analysis) %>% 
+  filter(Spatial_Analysis) %>%
   
-  # Main calculations and conditions
+  # Main calculations and conditions (unchanged except removal of old Weighted_* definitions)
   mutate(
     Park_Area = case_when(
       Park == "ASIS" ~ 37319.36952,
@@ -73,19 +76,12 @@ df <- read.xlsx(paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/M
       TRUE ~ NA_real_
     ),
     Percent_Tot = if_else(!is.na(Hex_Area) & !is.na(Park_Area),
-                         (Hex_Area / Park_Area) * 100,
-                         NA_real_),
-    Weighted_CHYA = if_else(!is.na(CHl_A_ug_l) & !is.na(Hex_Area) & !is.na(Park_Area) & Depth_type == 0,
-                            CHl_A_ug_l * Hex_Area / Park_Area,
-                            NA_real_), 
-    Weighted_Kd = if_else(!is.na(Kd) & !is.na(Hex_Area) & !is.na(Park_Area) & Depth_type == 0,
-                         Kd * Hex_Area / Park_Area,
-                         NA_real_),
-    Weighted_DO = if_else(!is.na(DO_mg_L) & !is.na(Hex_Area) & !is.na(Park_Area) & Depth_type == 0,
-                          DO_mg_L * Hex_Area / Park_Area,
-                          NA_real_),                      
+                          (Hex_Area / Park_Area) * 100,
+                          NA_real_),
+    
+    # --- CONDITIONS (kept as-is) ---
     Condition_CHLA = case_when(
-      is.na(CHl_A_ug_l) ~ "",  
+      is.na(CHl_A_ug_l) ~ "",
       CHl_A_ug_l == -9999 ~ "Missing",
       CHl_A_ug_l < 5 ~ "Good",
       CHl_A_ug_l <= 20 ~ "Fair",
@@ -106,7 +102,7 @@ df <- read.xlsx(paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/M
       Kd > 1.61 ~ "Poor"
     ),
     
-    # Add stratified logic for CACO & COLO parks
+    # --- STRAT LOGIC (kept as-is) ---
     Weighted_Strat = case_when(
       Park %in% c("ASIS", "FIIS", "GATE", "GEWA") ~ Park_Area, 
       Park == "CACO" & Stratum == 1 ~ 2466.449597,
@@ -122,22 +118,77 @@ df <- read.xlsx(paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/M
       Park == "CACO" & Stratum == 3 ~ 153.77413,
       Park == "COLO" & Stratum == 1 ~ 223.9309087,
       Park == "COLO" & Stratum == 2 ~ 67.95986818
-    ),
-    Weighted_Kd_StratInc = case_when(
-      Park %in% c("ASIS", "FIIS", "GATE", "GEWA") ~ Weighted_Kd, 
-      Park %in% c("CACO", "COLO") & !is.na(Kd) & !is.na(Hex_Area) & !is.na(Weighted_Strat) & Depth_type == 0 ~ Kd * Hex_Area / Weighted_Strat
-    ),
-    Weighted_DO_StratInc = case_when(
-      Park %in% c("ASIS", "FIIS", "GATE", "GEWA") ~ Weighted_DO,
-      Park %in% c("CACO", "COLO") & !is.na(DO_mg_L) & !is.na(Hex_Area) & !is.na(Weighted_Strat) & Depth_type == 0 ~ DO_mg_L * Hex_Area / Weighted_Strat
-    ),
-    Weighted_CHYA_StratInc = case_when(
-      Park %in% c("ASIS", "FIIS", "GATE", "GEWA") ~ Weighted_CHYA,
-      Park %in% c("CACO", "COLO") & !is.na(CHl_A_ug_l) & !is.na(Hex_Area) & !is.na(Weighted_Strat) & Depth_type == 0 ~ CHl_A_ug_l * Hex_Area / Weighted_Strat
     )
-  ) %>%
-  
-  # Add the Percent_tot_Strat column based on park type
+  )
+
+# -------------------------------------------------------------------------
+# UPDATED: Weighted mean denominators (match trend/AWA logic)
+#   - Kd: all depths
+#   - CHl_A_ug_l: surface only (Depth_type == 0)
+#   - DO_mg_L: bottom only (Depth_type == 2)
+#   Denominators are per Park + Year (for Weighted_*)
+# -------------------------------------------------------------------------
+denoms <- df %>%
+  group_by(Park, Sample_Year) %>%
+  summarise(
+    denom_Kd   = sum(if_else(!is.na(Kd) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    denom_CHYA = sum(if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    denom_DO   = sum(if_else(Depth_type == 2 & !is.na(DO_mg_L)    & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    .groups = "drop"
+  )
+
+df <- df %>%
+  left_join(denoms, by = c("Park","Sample_Year")) %>%
+  # -----------------------------------------------------------------------
+# UPDATED: Weighted_* using denominators above (names unchanged)
+#   Each row stores its weighted contribution:
+#      value * area / sum(area of rows with value in the group)
+#   Summing these per Park+Year yields the weighted mean.
+# -----------------------------------------------------------------------
+mutate(
+  Weighted_Kd   = if_else(!is.na(Kd) & !is.na(Hex_Area) & coalesce(denom_Kd, 0) > 0,
+                          Kd * Hex_Area / denom_Kd,
+                          NA_real_),
+  Weighted_CHYA = if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area) & coalesce(denom_CHYA, 0) > 0,
+                          CHl_A_ug_l * Hex_Area / denom_CHYA,
+                          NA_real_),
+  Weighted_DO   = if_else(Depth_type == 2 & !is.na(DO_mg_L) & !is.na(Hex_Area) & coalesce(denom_DO, 0) > 0,
+                          DO_mg_L * Hex_Area / denom_DO,
+                          NA_real_)
+)
+
+# -------------------------------------------------------------------------
+# UPDATED: Stratified denominators and *_StratInc (names unchanged)
+#   Denominators are per Park + Year + Stratum
+#   Same depth rules apply.
+# -------------------------------------------------------------------------
+denoms_strat <- df %>%
+  group_by(Park, Sample_Year, Stratum) %>%
+  summarise(
+    denom_Kd_s   = sum(if_else(!is.na(Kd) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    denom_CHYA_s = sum(if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    denom_DO_s   = sum(if_else(Depth_type == 2 & !is.na(DO_mg_L)    & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    .groups = "drop"
+  )
+
+df <- df %>%
+  left_join(denoms_strat, by = c("Park","Sample_Year","Stratum")) %>%
+  mutate(
+    Weighted_Kd_StratInc   = if_else(!is.na(Kd) & !is.na(Hex_Area) & coalesce(denom_Kd_s, 0) > 0,
+                                     Kd * Hex_Area / denom_Kd_s,
+                                     NA_real_),
+    Weighted_CHYA_StratInc = if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area) & coalesce(denom_CHYA_s, 0) > 0,
+                                     CHl_A_ug_l * Hex_Area / denom_CHYA_s,
+                                     NA_real_),
+    Weighted_DO_StratInc   = if_else(Depth_type == 2 & !is.na(DO_mg_L) & !is.na(Hex_Area) & coalesce(denom_DO_s, 0) > 0,
+                                     DO_mg_L * Hex_Area / denom_DO_s,
+                                     NA_real_)
+  )
+
+# -------------------------------------------------------------------------
+# Add the Percent_tot_Strat column based on park type (kept as-is)
+# -------------------------------------------------------------------------
+df <- df %>%
   mutate(
     Percent_tot_Strat = case_when(
       Park %in% c("ASIS", "FIIS", "GATE", "GEWA") & !is.na(Hex_Area) & !is.na(Park_Area) ~
@@ -147,15 +198,38 @@ df <- read.xlsx(paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/M
       TRUE ~ NA_real_
     )
   ) %>%
+  
+  # Manipulate column types to match the hosted feature layer on AGOL (kept as-is)
+  mutate(
+    across(c(Park, Event_ID, Kd_Data_Qualifier, Certified_By, QC_Notes, Spatial_Analysis,
+             Condition_CHLA, Condition_Kd, Condition_DO), as.character),
+    across(c(Date, Certified_Date), ~as.Date(.x, format = "%m/%d/%Y")),
+    Time = format(as.POSIXct("1899-12-31") + as.difftime(Time, units = "days"), "%m/%d/%Y %r"),
+    across(-c(Park, Event_ID, Kd_Data_Qualifier, Certified_By, QC_Notes, Spatial_Analysis,
+              Condition_CHLA, Condition_Kd, Condition_DO, Date, Certified_Date, Time), as.numeric),
+    NumRep = ""
+  ) %>%
+  
+  # Final column selection (names unchanged)
+  select(
+    Park, Sample_Year, Stratum, Event_ID, Hex_num, Hex_Area, Site_Type,
+    Date, Time, Depth_type, Kd, Kd_R_Squared, Kd_Data_Qualifier, Temp_deg_C,
+    Sp_Conductance_mS_cm, Salinity_ppt, DO_PercentSat, DO_mg_L, Depth__m_,
+    Turbidity_NTU, CHl_A_ug_l, Latitude, Longitude, pH, Certified_Date,
+    Certified_By, QC_Notes, Spatial_Analysis,
+    Weighted_Kd, Weighted_DO, Weighted_CHYA,        # UPDATED logic, same names
+    Park_Area, Condition_CHLA, Condition_Kd, Percent_Tot, Condition_DO,
+    Weighted_Strat, ParkStrat_area,
+    Weighted_Kd_StratInc, Weighted_DO_StratInc, Weighted_CHYA_StratInc,  # UPDATED logic, same names
+    Percent_tot_Strat, NumRep
+  )
 
-  # Manipulate column types to make sure they match the NCBN Water Quality Monitoring Dashboard hosted feature layer on AGOL
-  mutate(across(c(Park, Event_ID, Kd_Data_Qualifier, Certified_By, QC_Notes, Spatial_Analysis, Condition_CHLA, Condition_Kd, Condition_DO), as.character),
-         across(c(Date, Certified_Date), ~as.Date(.x, format = "%m/%d/%Y")),
-         Time = format(as.POSIXct("1899-12-31") + as.difftime(Time, units = "days"), "%m/%d/%Y %r"),
-         across(-c(Park, Event_ID, Kd_Data_Qualifier, Certified_By, QC_Notes, Spatial_Analysis, Condition_CHLA, Condition_Kd, Condition_DO, Date, Certified_Date, Time), as.numeric),
-         NumRep = "") %>%
-  select(Park, Sample_Year, Stratum, Event_ID, Hex_num, Hex_Area, Site_Type, Date, Time, Depth_type, Kd, Kd_R_Squared, Kd_Data_Qualifier, Temp_deg_C, Sp_Conductance_mS_cm, Salinity_ppt, DO_PercentSat, DO_mg_L, Depth__m_, Turbidity_NTU, CHl_A_ug_l, Latitude, Longitude, pH, Certified_Date, Certified_By, QC_Notes, Spatial_Analysis, Weighted_Kd, Weighted_DO, Weighted_CHYA, Park_Area, Condition_CHLA, Condition_Kd, Percent_Tot, Condition_DO, Weighted_Strat, ParkStrat_area, Weighted_Kd_StratInc, Weighted_DO_StratInc, Weighted_CHYA_StratInc, Percent_tot_Strat, NumRep)
-
-# Save the output xlsx without NAs showing as NA
-write.xlsx(df, paste0("\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/", sample_year, "/", sample_year, "_Final_Master_ENE_Dashboard.xlsx"),
-           keepNA = FALSE)
+# Save the output xlsx without NAs showing as NA --------------------------
+write.xlsx(
+  df,
+  paste0(
+    "\\\\files.nps.doi.net/NPS/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/",
+    sample_year, "/", sample_year, "_Final_Master_ENE_Dashboard.xlsx"
+  ),
+  keepNA = FALSE
+)
