@@ -11,11 +11,10 @@ library(openxlsx)
 # 4. Save a backup copy of the hosted feature layer (use the Export Data button on the right side of AGOL)
 # 5. Still in AGOL click "update data" on the right side menu, select "Add features" and upload the xlsx file with the new calculated values, then match up the fields and update the layer
 # 6. Open the dashboard "NCBN Water Quality Monitoring Dashboard" and make sure all the components are updated - in particular add the new year to the year filter at the top
-# * Note - It looks like the excel file "Final_Master_ENE_Dashboard" in AGOL is not actually used for anything, so not sure if we need to continue updating it?
+# * Note - It looks like the excel file "Final_Master_ENE_Dashboard" in AGOL is not actually used for anything, so not sure if we need to continue updating it
 
-# -------------------------------------------------------------------------
-
-sample_year <- 2022 # change this each time you update calculations
+# Chose Sample Year
+sample_year <- 2024 # change this each time you update calculations
 
 # Load data ---------------------------------------------------------------
 df <- read.xlsx(
@@ -27,10 +26,10 @@ df <- read.xlsx(
   sep.names   = "_",
   detectDates = TRUE
 ) %>%
-  rename_with(~trimws(.)) %>% # Trim whitespace from column names (if any)
+  rename_with(~trimws(.)) %>%
   # Rename columns to match NCBN Water Quality Monitoring Dashboard hosted feature layer on AGOL
   rename_with(
-    ~case_when( # Column name normalization (kept as-is)
+    ~case_when(
       str_detect(., regex("park", ignore_case = TRUE)) ~ "Park",
       str_detect(., regex("sample", ignore_case = TRUE)) ~ "Sample_Year",
       str_detect(., regex("stratum", ignore_case = TRUE)) ~ "Stratum",
@@ -62,9 +61,33 @@ df <- read.xlsx(
     )
   ) %>%
   # Keep only rows where Spatial_Analysis is TRUE
-  filter(Spatial_Analysis) %>%
-  
-  # Main calculations and conditions (unchanged except removal of old Weighted_* definitions)
+  filter(Spatial_Analysis)
+
+# -------------------------------------------------------------------------
+# Convert blank strings to NA across character columns (so "" counts as missing)
+# -------------------------------------------------------------------------
+df <- df %>%
+  mutate(across(where(is.character), ~na_if(.x, "")))
+
+# -------------------------------------------------------------------------
+# Capture sentinel -9999 flags BEFORE converting -9999 to NA
+# (depth-aware flags so we can still mark "Missing" where appropriate)
+# -------------------------------------------------------------------------
+df <- df %>%
+  mutate(
+    kd_sentinel_flag   = (Depth_type == 0 & (Kd == -9999 | Kd == "-9999")),
+    chla_sentinel_flag = (Depth_type == 0 & (CHl_A_ug_l == -9999 | CHl_A_ug_l == "-9999")),
+    do_sentinel_flag   = (Depth_type == 2 & (DO_mg_L == -9999 | DO_mg_L == "-9999"))
+  )
+
+# -------------------------------------------------------------------------
+# Convert -9999 numeric values to NA (prevents use in denominators/means)
+# -------------------------------------------------------------------------
+df <- df %>%
+  mutate(across(where(is.numeric), ~na_if(.x, -9999)))
+
+# Main calculations and conditions ---------------------------------------
+df <- df %>%
   mutate(
     Park_Area = case_when(
       Park == "ASIS" ~ 37319.36952,
@@ -75,34 +98,34 @@ df <- read.xlsx(
       Park == "GEWA" ~ 142.3594358,
       TRUE ~ NA_real_
     ),
-    Percent_Tot = if_else(!is.na(Hex_Area) & !is.na(Park_Area),
-                          (Hex_Area / Park_Area) * 100,
-                          NA_real_),
     
-    # --- CONDITIONS (kept as-is) ---
+    # --- CONDITIONS (depth-aware; blanks/NA and sentinel -> Missing at correct depths) ---
+    # CHl-a: Depth 0 only
     Condition_CHLA = case_when(
-      is.na(CHl_A_ug_l) ~ "",
-      CHl_A_ug_l == -9999 ~ "Missing",
+      Depth_type != 0 ~ "",
+      chla_sentinel_flag | is.na(CHl_A_ug_l) ~ "Missing",
       CHl_A_ug_l < 5 ~ "Good",
       CHl_A_ug_l <= 20 ~ "Fair",
       CHl_A_ug_l > 20 ~ "Poor"
     ),
+    # DO: Depth 2 only
     Condition_DO = case_when(
-      is.na(DO_mg_L) ~ "",
-      DO_mg_L == -9999 ~ "Missing",
+      Depth_type != 2 ~ "",
+      do_sentinel_flag | is.na(DO_mg_L) ~ "Missing",
       DO_mg_L > 5 ~ "Good",
       DO_mg_L >= 2 ~ "Fair",
       DO_mg_L < 2 ~ "Poor"
     ),
+    # Kd: Depth 0 only
     Condition_Kd = case_when(
-      is.na(Kd) ~ "",
-      Kd == -9999 ~ "Missing",
+      Depth_type != 0 ~ "",
+      kd_sentinel_flag | is.na(Kd) ~ "Missing",
       Kd < 0.92 ~ "Good",
       Kd <= 1.61 ~ "Fair",
       Kd > 1.61 ~ "Poor"
     ),
     
-    # --- STRAT LOGIC (kept as-is) ---
+    # STRAT LOGIC (areas per park/stratum)
     Weighted_Strat = case_when(
       Park %in% c("ASIS", "FIIS", "GATE", "GEWA") ~ Park_Area, 
       Park == "CACO" & Stratum == 1 ~ 2466.449597,
@@ -122,84 +145,119 @@ df <- read.xlsx(
   )
 
 # -------------------------------------------------------------------------
-# UPDATED: Weighted mean denominators (match trend/AWA logic)
-#   - Kd: all depths
-#   - CHl_A_ug_l: surface only (Depth_type == 0)
-#   - DO_mg_L: bottom only (Depth_type == 2)
-#   Denominators are per Park + Year (for Weighted_*)
+# Denominators (Park + Year) respecting depth rules
+#   - Kd:       Depth_type == 0
+#   - CHl_A:    Depth_type == 0
+#   - DO_mg_L:  Depth_type == 2
 # -------------------------------------------------------------------------
 denoms <- df %>%
   group_by(Park, Sample_Year) %>%
   summarise(
-    denom_Kd   = sum(if_else(!is.na(Kd) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    denom_Kd   = sum(if_else(Depth_type == 0 & !is.na(Kd)         & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
     denom_CHYA = sum(if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
     denom_DO   = sum(if_else(Depth_type == 2 & !is.na(DO_mg_L)    & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    # Depth-aware union areas for Percent_Tot (include valid + sentinel + blank/NA)
+    area_surface_union = sum(
+      if_else(
+        Depth_type == 0 &
+          (
+            !is.na(Kd) | !is.na(CHl_A_ug_l) | kd_sentinel_flag | chla_sentinel_flag |
+              is.na(Kd)  | is.na(CHl_A_ug_l)   # include blank NA as missing
+          ) & !is.na(Hex_Area),
+        Hex_Area, 0
+      ),
+      na.rm = TRUE
+    ),
+    area_bottom_do = sum(
+      if_else(
+        Depth_type == 2 &
+          (
+            !is.na(DO_mg_L) | do_sentinel_flag | is.na(DO_mg_L)  # include blank NA as missing
+          ) & !is.na(Hex_Area),
+        Hex_Area, 0
+      ),
+      na.rm = TRUE
+    ),
     .groups = "drop"
   )
 
 df <- df %>%
   left_join(denoms, by = c("Park","Sample_Year")) %>%
-  # -----------------------------------------------------------------------
-# UPDATED: Weighted_* using denominators above (names unchanged)
-#   Each row stores its weighted contribution:
-#      value * area / sum(area of rows with value in the group)
-#   Summing these per Park+Year yields the weighted mean.
-# -----------------------------------------------------------------------
-mutate(
-  Weighted_Kd   = if_else(!is.na(Kd) & !is.na(Hex_Area) & coalesce(denom_Kd, 0) > 0,
-                          Kd * Hex_Area / denom_Kd,
-                          NA_real_),
-  Weighted_CHYA = if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area) & coalesce(denom_CHYA, 0) > 0,
-                          CHl_A_ug_l * Hex_Area / denom_CHYA,
-                          NA_real_),
-  Weighted_DO   = if_else(Depth_type == 2 & !is.na(DO_mg_L) & !is.na(Hex_Area) & coalesce(denom_DO, 0) > 0,
-                          DO_mg_L * Hex_Area / denom_DO,
-                          NA_real_)
-)
+  mutate(
+    Weighted_Kd   = if_else(Depth_type == 0 & !is.na(Kd)         & !is.na(Hex_Area) & coalesce(denom_Kd,   0) > 0,
+                            Kd * Hex_Area / denom_Kd,   NA_real_),
+    Weighted_CHYA = if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area) & coalesce(denom_CHYA, 0) > 0,
+                            CHl_A_ug_l * Hex_Area / denom_CHYA, NA_real_),
+    Weighted_DO   = if_else(Depth_type == 2 & !is.na(DO_mg_L)    & !is.na(Hex_Area) & coalesce(denom_DO,   0) > 0,
+                            DO_mg_L * Hex_Area / denom_DO,   NA_real_)
+  )
 
 # -------------------------------------------------------------------------
-# UPDATED: Stratified denominators and *_StratInc (names unchanged)
-#   Denominators are per Park + Year + Stratum
-#   Same depth rules apply.
+# Stratified denominators (Park + Year + Stratum) [same depth rules]
+# Percent_tot_Strat denominators include valid + sentinel + blank/NA at applicable depths
 # -------------------------------------------------------------------------
 denoms_strat <- df %>%
   group_by(Park, Sample_Year, Stratum) %>%
   summarise(
-    denom_Kd_s   = sum(if_else(!is.na(Kd) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    denom_Kd_s   = sum(if_else(Depth_type == 0 & !is.na(Kd)         & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
     denom_CHYA_s = sum(if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
     denom_DO_s   = sum(if_else(Depth_type == 2 & !is.na(DO_mg_L)    & !is.na(Hex_Area), Hex_Area, 0), na.rm = TRUE),
+    
+    area_surface_union_s = sum(
+      if_else(
+        Depth_type == 0 &
+          (
+            !is.na(Kd) | !is.na(CHl_A_ug_l) | kd_sentinel_flag | chla_sentinel_flag |
+              is.na(Kd)  | is.na(CHl_A_ug_l)
+          ) & !is.na(Hex_Area),
+        Hex_Area, 0
+      ),
+      na.rm = TRUE
+    ),
+    area_bottom_do_s = sum(
+      if_else(
+        Depth_type == 2 &
+          (
+            !is.na(DO_mg_L) | do_sentinel_flag | is.na(DO_mg_L)
+          ) & !is.na(Hex_Area),
+        Hex_Area, 0
+      ),
+      na.rm = TRUE
+    ),
     .groups = "drop"
   )
 
 df <- df %>%
   left_join(denoms_strat, by = c("Park","Sample_Year","Stratum")) %>%
   mutate(
-    Weighted_Kd_StratInc   = if_else(!is.na(Kd) & !is.na(Hex_Area) & coalesce(denom_Kd_s, 0) > 0,
-                                     Kd * Hex_Area / denom_Kd_s,
-                                     NA_real_),
+    # StratInc weighted contributions with correct depth rules
+    Weighted_Kd_StratInc   = if_else(Depth_type == 0 & !is.na(Kd)         & !is.na(Hex_Area) & coalesce(denom_Kd_s,   0) > 0,
+                                     Kd * Hex_Area / denom_Kd_s,   NA_real_),
     Weighted_CHYA_StratInc = if_else(Depth_type == 0 & !is.na(CHl_A_ug_l) & !is.na(Hex_Area) & coalesce(denom_CHYA_s, 0) > 0,
-                                     CHl_A_ug_l * Hex_Area / denom_CHYA_s,
-                                     NA_real_),
-    Weighted_DO_StratInc   = if_else(Depth_type == 2 & !is.na(DO_mg_L) & !is.na(Hex_Area) & coalesce(denom_DO_s, 0) > 0,
-                                     DO_mg_L * Hex_Area / denom_DO_s,
-                                     NA_real_)
+                                     CHl_A_ug_l * Hex_Area / denom_CHYA_s, NA_real_),
+    Weighted_DO_StratInc   = if_else(Depth_type == 2 & !is.na(DO_mg_L)    & !is.na(Hex_Area) & coalesce(denom_DO_s,   0) > 0,
+                                     DO_mg_L * Hex_Area / denom_DO_s,   NA_real_)
+  ) %>%
+  # -----------------------------------------------------------------------
+# Depth-aware Percent_Tot and Percent_tot_Strat (include sentinel + blank/NA)
+# -----------------------------------------------------------------------
+mutate(
+  Percent_Tot = case_when(
+    Depth_type == 0 & coalesce(area_surface_union, 0) > 0 ~ (Hex_Area / area_surface_union) * 100,
+    Depth_type == 2 & coalesce(area_bottom_do, 0)   > 0 ~ (Hex_Area / area_bottom_do)     * 100,
+    TRUE ~ NA_real_
+  ),
+  Percent_tot_Strat = case_when(
+    Depth_type == 0 & coalesce(area_surface_union_s, 0) > 0 ~ (Hex_Area / area_surface_union_s) * 100,
+    Depth_type == 2 & coalesce(area_bottom_do_s, 0)   > 0 ~ (Hex_Area / area_bottom_do_s)     * 100,
+    TRUE ~ NA_real_
   )
+)
 
 # -------------------------------------------------------------------------
-# Add the Percent_tot_Strat column based on park type (kept as-is)
+# Manipulate column types to match the hosted feature layer on AGOL (kept as-is)
 # -------------------------------------------------------------------------
 df <- df %>%
-  mutate(
-    Percent_tot_Strat = case_when(
-      Park %in% c("ASIS", "FIIS", "GATE", "GEWA") & !is.na(Hex_Area) & !is.na(Park_Area) ~
-        (Hex_Area / Park_Area) * 100,
-      Park %in% c("CACO", "COLO") & !is.na(Hex_Area) & !is.na(ParkStrat_area) ~
-        (Hex_Area / ParkStrat_area) * 100,
-      TRUE ~ NA_real_
-    )
-  ) %>%
-  
-  # Manipulate column types to match the hosted feature layer on AGOL (kept as-is)
   mutate(
     across(c(Park, Event_ID, Kd_Data_Qualifier, Certified_By, QC_Notes, Spatial_Analysis,
              Condition_CHLA, Condition_Kd, Condition_DO), as.character),
@@ -233,3 +291,4 @@ write.xlsx(
   ),
   keepNA = FALSE
 )
+
