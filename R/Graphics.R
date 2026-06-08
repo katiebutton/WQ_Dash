@@ -3,7 +3,7 @@ plot_metric <- function(df, metric) {
   library(tidyverse)
   
   # -------------------------------------------------------
-  # METRIC SETUP (your logic preserved)
+  # METRIC SETUP
   # -------------------------------------------------------
   
   if (metric == "DO") {
@@ -55,7 +55,6 @@ plot_metric <- function(df, metric) {
     mutate(percent = n / sum(n) * 100) %>%
     ungroup()
   
-  # Order + highlight
   summ <- summ %>%
     mutate(year_num = as.numeric(as.character(Sample_Year))) %>%
     arrange(desc(year_num)) %>%
@@ -64,14 +63,18 @@ plot_metric <- function(df, metric) {
       highlight = year_num == max(year_num)
     )
   
-  # Ensure condition order
+  # -------------------------------------------------------
+  # CORRECT STACK ORDER + LEGEND ORDER
+  # -------------------------------------------------------
+  # Stack = Missing (bottom) → Poor → Fair → Good (top)
+  
   summ$condition <- factor(
     summ$condition,
-    levels = c("Good", "Fair", "Poor", "Missing")
+    levels = c("Missing", "Poor", "Fair", "Good")
   )
   
   # -------------------------------------------------------
-  # OUTLINE DATA
+  # OUTLINE FOR LATEST YEAR
   # -------------------------------------------------------
   
   latest_year <- max(summ$year_num)
@@ -105,8 +108,12 @@ plot_metric <- function(df, metric) {
         "Poor" = "#D73027",
         "Missing" = "#BDBDBD"
       ),
-      labels = legend_lbl   # 🔥 THIS is the key piece
+      labels = legend_lbl,
+      breaks = c("Missing", "Poor", "Fair", "Good")
     ) +
+    
+    # 🔥 Reverse the legend visual ordering
+    guides(fill = guide_legend(reverse = TRUE)) +
     
     scale_alpha_manual(
       values = c(`TRUE` = 1, `FALSE` = 0.4),
@@ -130,13 +137,21 @@ plot_metric <- function(df, metric) {
       panel.grid.major.y = element_blank(),
       panel.grid.minor = element_blank(),
       panel.grid.major.x = element_line(color = "grey85"),
+      
       axis.title = element_blank(),
-      plot.title = element_text(face = "bold", size = 14),
+      axis.text = element_text(size = 14, face = "bold"),
+      
+      plot.title = element_text(face = "bold", size = 18),
+      plot.subtitle = element_text(size = 14),
+      
+      legend.text = element_text(size = 12),
       legend.position = "bottom"
     )
   
   return(p)
 }
+
+# Examples
 p_CHLA <- plot_metric(df, "CHLA")
 p_DO   <- plot_metric(df, "DO")
 p_Kd   <- plot_metric(df, "Kd")
