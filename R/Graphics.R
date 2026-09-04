@@ -1,3 +1,22 @@
+# -------------------------------------------------------
+# LOAD DATA
+# -------------------------------------------------------
+
+park_to_plot <- "FIIS"
+
+df <- read.xlsx(
+  final_path,
+  detectDates = TRUE,
+  sep.names = "_",
+  check.names = FALSE
+) %>%
+  filter(Park == park_to_plot)
+
+
+# -------------------------------------------------------
+# PLOT FUNCTION
+# -------------------------------------------------------
+
 plot_metric <- function(df, metric) {
   
   library(tidyverse)
@@ -28,7 +47,7 @@ plot_metric <- function(df, metric) {
     )
     plot_title <- "Percent of Estuarine Area — Kd (Surface)"
     
-  } else { # CHLA
+  } else {
     cond_col   <- "Condition_CHLA"
     depth_keep <- 0
     legend_lbl <- c(
@@ -44,29 +63,42 @@ plot_metric <- function(df, metric) {
   # DATA PREP
   # -------------------------------------------------------
   
-  df_sub <- df %>%
+  summ <- df %>%
     filter(Depth_type == depth_keep) %>%
-    mutate(condition = .data[[cond_col]])
-  
-  summ <- df_sub %>%
-    group_by(Sample_Year, condition) %>%
-    summarise(n = n(), .groups = "drop") %>%
-    group_by(Sample_Year) %>%
-    mutate(percent = n / sum(n) * 100) %>%
-    ungroup()
-  
-  summ <- summ %>%
-    mutate(year_num = as.numeric(as.character(Sample_Year))) %>%
-    arrange(desc(year_num)) %>%
     mutate(
-      Sample_Year = factor(year_num, levels = unique(year_num)),
-      highlight = year_num == max(year_num)
+      Sample_Year = as.numeric(Sample_Year),
+      condition = .data[[cond_col]],
+      condition = ifelse(
+        is.na(condition) | condition == "",
+        "Missing",
+        condition
+      ),
+      condition = str_trim(condition)
+    ) %>%
+    group_by(Sample_Year, condition) %>%
+    summarise(
+      percent = sum(Percent_Tot, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    complete(
+      Sample_Year = sort(unique(Sample_Year), decreasing = TRUE),
+      condition = c("Missing", "Poor", "Fair", "Good"),
+      fill = list(percent = 0)
+    ) %>%
+    group_by(Sample_Year) %>%
+    mutate(percent = percent / sum(percent) * 100) %>%
+    ungroup() %>%
+    mutate(
+      percent = round(percent, 1),
+      Sample_Year = factor(
+        Sample_Year,
+        levels = sort(unique(Sample_Year), decreasing = TRUE)
+      )
     )
   
   # -------------------------------------------------------
-  # CORRECT STACK ORDER + LEGEND ORDER
+  # STACK / LEGEND ORDER
   # -------------------------------------------------------
-  # Stack = Missing (bottom) → Poor → Fair → Good (top)
   
   summ$condition <- factor(
     summ$condition,
@@ -77,20 +109,28 @@ plot_metric <- function(df, metric) {
   # OUTLINE FOR LATEST YEAR
   # -------------------------------------------------------
   
-  latest_year <- max(summ$year_num)
+  latest_year <- max(as.numeric(as.character(summ$Sample_Year)))
   
   outline_df <- summ %>%
     group_by(Sample_Year) %>%
     summarise(total = sum(percent), .groups = "drop") %>%
-    filter(as.numeric(as.character(Sample_Year)) == latest_year)
+    filter(
+      as.numeric(as.character(Sample_Year)) == latest_year
+    )
   
   # -------------------------------------------------------
   # PLOT
   # -------------------------------------------------------
   
-  p <- ggplot(summ, aes(x = percent, y = Sample_Year, fill = condition)) +
+  p <- ggplot(
+    summ,
+    aes(x = percent, y = Sample_Year, fill = condition)
+  ) +
     
-    geom_col(aes(alpha = highlight), width = 0.65) +
+    geom_col(
+      aes(alpha = as.numeric(as.character(Sample_Year)) == latest_year),
+      width = 0.65
+    ) +
     
     geom_col(
       data = outline_df,
@@ -103,17 +143,18 @@ plot_metric <- function(df, metric) {
     
     scale_fill_manual(
       values = c(
-        "Good" = "#7FBF3F",
-        "Fair" = "#F2A900",
-        "Poor" = "#D73027",
-        "Missing" = "#BDBDBD"
+        Good = "#7FBF3F",
+        Fair = "#F2A900",
+        Poor = "#D73027",
+        Missing = "#BDBDBD"
       ),
       labels = legend_lbl,
       breaks = c("Missing", "Poor", "Fair", "Good")
     ) +
     
-    # 🔥 Reverse the legend visual ordering
-    guides(fill = guide_legend(reverse = TRUE)) +
+    guides(
+      fill = guide_legend(reverse = TRUE)
+    ) +
     
     scale_alpha_manual(
       values = c(`TRUE` = 1, `FALSE` = 0.4),
@@ -128,7 +169,11 @@ plot_metric <- function(df, metric) {
     
     labs(
       title = plot_title,
-      subtitle = paste0("Most recent year (", latest_year, ") highlighted"),
+      subtitle = paste0(
+        "Most recent year (",
+        latest_year,
+        ") highlighted"
+      ),
       fill = NULL
     ) +
     
@@ -137,13 +182,10 @@ plot_metric <- function(df, metric) {
       panel.grid.major.y = element_blank(),
       panel.grid.minor = element_blank(),
       panel.grid.major.x = element_line(color = "grey85"),
-      
       axis.title = element_blank(),
       axis.text = element_text(size = 14, face = "bold"),
-      
       plot.title = element_text(face = "bold", size = 18),
       plot.subtitle = element_text(size = 14),
-      
       legend.text = element_text(size = 12),
       legend.position = "bottom"
     )
@@ -151,7 +193,11 @@ plot_metric <- function(df, metric) {
   return(p)
 }
 
-# Examples
+
+# -------------------------------------------------------
+# RUN
+# -------------------------------------------------------
+
 p_CHLA <- plot_metric(df, "CHLA")
 p_DO   <- plot_metric(df, "DO")
 p_Kd   <- plot_metric(df, "Kd")
