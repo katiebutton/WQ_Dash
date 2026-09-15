@@ -1,9 +1,37 @@
 ---
 title: "WQ_Trend_Reports"
 author: "M. Compo, K. Button"
-date: "2026-09-04"
-output: html_document
+execute:
+  message: false
+  warning: false
+editor options: 
+  markdown:
+    wrap: none
+output: 
+  html_document:
+    keep_md: false
+    toc: true
+    toc_float: true
+    fig_caption: true
+    number_sections: false
+    df_print: kable
+    theme: journal
+    css: journalnps.min.css
+    includes:
+        before_body:
+          - header.html
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+params:
+  park: "CACO" #change to FIIS or CACO when knitting for park specific report
+  park_name: "Cape Cod National Seashore"
 ---
+```{=html}
+<style>
+p.caption {
+  font-size: 0.8em;
+}
+</style>
+```
 
 test test test
 ```{r setup, include=FALSE}
