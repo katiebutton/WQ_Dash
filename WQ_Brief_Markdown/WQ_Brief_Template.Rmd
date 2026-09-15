@@ -1,0 +1,280 @@
+---
+title: "Estuarine Nutrient Enrichment Status Report"
+subtitle: "Fire Island National Seashore"
+author: "National Park Service — Northeast Coastal and Barrier Network (NCBN)"
+execute:
+  message: false
+  warning: false
+editor_options:
+  markdown:
+    wrap: none
+output:
+  html_document:
+    keep_md: false
+    toc: true
+    toc_float: true
+    fig_caption: false
+    number_sections: false
+    df_print: kable
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+params:
+  data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
+  park_code: "FIIS"
+  park_name: "Fire Island National Seashore"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+
+condition_levels <- c("Good", "Fair", "Poor", "Missing")
+```
+
+```{r load-data}
+# --- Load the master dashboard file and isolate this park's records ---
+raw <- read_excel(params$data_file, sheet = "Sheet 1")
+park_data <- raw %>% filter(Park == params$park_code)
+
+current_year <- max(park_data$Sample_Year, na.rm = TRUE)
+prior_years  <- sort(unique(park_data$Sample_Year[park_data$Sample_Year < current_year]), decreasing = TRUE)
+prior_year   <- if (length(prior_years) > 0) prior_years[1] else NA
+
+current_data <- park_data %>% filter(Sample_Year == current_year)
+prior_data   <- if (!is.na(prior_year)) park_data %>% filter(Sample_Year == prior_year) else NULL
+
+# --- Aggregation helper: sums the pre-weighted percent-of-area column by condition, for one year ---
+pct_by_condition <- function(data, cond_col, pct_col) {
+  data %>%
+    filter(!is.na(.data[[cond_col]]), .data[[cond_col]] != "") %>%
+    group_by(Condition = .data[[cond_col]]) %>%
+    summarise(Percent = sum(.data[[pct_col]], na.rm = TRUE), .groups = "drop") %>%
+    mutate(Condition = ifelse(Condition == "", "Missing", Condition)) %>%
+    complete(Condition = condition_levels, fill = list(Percent = 0)) %>%
+    mutate(Condition = factor(Condition, levels = condition_levels)) %>%
+    filter(!(Condition == "Missing" & Percent == 0))
+}
+
+do_df   <- pct_by_condition(current_data, "Condition_DO",   "Percent_tot_Strat")
+chla_df <- pct_by_condition(current_data, "Condition_CHLA", "Percent_Tot")
+kd_df   <- pct_by_condition(current_data, "Condition_Kd",   "Percent_Tot")
+
+# --- Park-wide area-weighted mean concentration for the current year ---
+current_kd_val   <- sum(current_data$Weighted_Kd,   na.rm = TRUE)
+current_do_val   <- sum(current_data$Weighted_DO,   na.rm = TRUE)
+current_chla_val <- sum(current_data$Weighted_CHYA, na.rm = TRUE)
+
+# Pull a single value out of a condition table, defaulting to 0 if absent
+get_pct <- function(df, cond) {
+  val <- df$Percent[df$Condition == cond]
+  if (length(val) == 0 || is.na(val)) return(0)
+  round(val, 1)
+}
+
+# Majority condition (Good/Fair/Poor only — excludes Missing)
+majority_condition <- function(df) {
+  scored <- df %>% filter(Condition %in% c("Good", "Fair", "Poor"))
+  if (nrow(scored) == 0 || all(scored$Percent == 0)) return(NA_character_)
+  as.character(scored$Condition[which.max(scored$Percent)])
+}
+
+do_majority   <- majority_condition(do_df)
+chla_majority <- majority_condition(chla_df)
+kd_majority   <- majority_condition(kd_df)
+
+if (!is.null(prior_data)) {
+  do_prior_df   <- pct_by_condition(prior_data, "Condition_DO",   "Percent_tot_Strat")
+  chla_prior_df <- pct_by_condition(prior_data, "Condition_CHLA", "Percent_Tot")
+  kd_prior_df   <- pct_by_condition(prior_data, "Condition_Kd",   "Percent_Tot")
+}
+
+concern_indicators <- c(
+  if (!is.na(do_majority)   && do_majority   != "Good") "bottom water dissolved oxygen",
+  if (!is.na(chla_majority) && chla_majority != "Good") "surface water chlorophyll-a",
+  if (!is.na(kd_majority)   && kd_majority   != "Good") "water column light attenuation"
+)
+```
+
+```{r scorecard-data}
+# --- Grade helper: converts a 0-100 score into a letter grade (with +/-) ---
+grade_from_score <- function(score) {
+  bands <- list(A = c(80, 100), B = c(60, 80), C = c(40, 60), D = c(20, 40), F = c(0, 20))
+  for (nm in names(bands)) {
+    lo <- bands[[nm]][1]; hi <- bands[[nm]][2]
+    if (score >= lo && score <= hi) {
+      if (nm == "F") return("F")
+      pos <- (score - lo) / (hi - lo)
+      suffix <- if (pos < 1/3) "-" else if (pos < 2/3) "" else "+"
+      return(paste0(nm, suffix))
+    }
+  }
+  "F"
+}
+
+# --- Weighted score: full credit for Good, half credit for Fair, none for Poor ---
+weighted_score <- function(df) {
+  get_pct(df, "Good") * 1.0 + get_pct(df, "Fair") * 0.5 + get_pct(df, "Poor") * 0.0
+}
+
+trend_arrow <- function(delta) {
+  if (is.na(delta)) return("—")
+  if (delta > 3) return("Improved")
+  if (delta < -3) return("Declined")
+  "Stable"
+}
+
+scorecard_df <- data.frame(
+  Indicator = c("Dissolved Oxygen", "Chlorophyll-a", "Water Clarity (Kd)"),
+  Score     = c(weighted_score(do_df), weighted_score(chla_df), weighted_score(kd_df)),
+  PriorScore = c(
+    if (!is.null(prior_data)) weighted_score(do_prior_df)   else NA,
+    if (!is.null(prior_data)) weighted_score(chla_prior_df) else NA,
+    if (!is.null(prior_data)) weighted_score(kd_prior_df)   else NA
+  ),
+  stringsAsFactors = FALSE
+)
+scorecard_df$Grade <- sapply(scorecard_df$Score, grade_from_score)
+scorecard_df$Delta <- scorecard_df$Score - scorecard_df$PriorScore
+scorecard_df$Trend <- sapply(scorecard_df$Delta, trend_arrow)
+
+scorecard_display <- scorecard_df %>%
+  transmute(
+    Indicator,
+    `Score (%)` = round(Score),
+    Grade,
+    Trend
+  )
+```
+
+<style>
+.status-table td, .status-table th { text-align: center; vertical-align: middle; }
+.quick-dive-box {
+  background-color: #EAF2F8;
+  border-left: 5px solid #2E86C1;
+  padding: 12px 18px;
+  margin-bottom: 20px;
+}
+</style>
+
+## Quick Dive
+
+<div class="quick-dive-box">
+Many of our coastal parks are home to dynamic estuaries, where saltwater meets freshwater. These waters also experience the detrimental effects of estuarine nutrient enrichment, largely from human activities, that impact water quality. The Northeast Coastal and Barrier Network (NCBN) parks depend on high-quality aquatic resources to sustain complex estuarine and near-shore ecosystems.
+</div>
+
+### Condition of Majority of Sampled Area
+
+```{r condition-note, results='asis'}
+if (length(concern_indicators) == 0) {
+  cat(paste0("*Note: All three response indicators at ", params$park_code, " were in good condition during the ",
+             current_year, " index period.*"))
+} else {
+  cat(paste0("*Note: Condition of ", paste(concern_indicators, collapse = " and "),
+             " at ", params$park_code, " in ", current_year,
+             " indicates that the estuarine system remains nutrient over-enriched.*"))
+}
+```
+
+```{r scorecard-table}
+kable(scorecard_display,
+      caption = paste0(params$park_code, " Indicator Report Card — ", current_year),
+      align = "lccc") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered"))
+```
+
+*Score reflects a weighted blend of sampled estuarine area condition for each indicator: 100% credit for area in Good condition, 50% credit for Fair, 0% for Poor. Trend compares the `r current_year` score to the `r if (!is.na(prior_year)) prior_year else "prior"` index period (Improved / Stable / Declined by more than 3 points).*
+
+**Additional Resources:** The data referenced in this brief is available [here](https://irma.nps.gov/DataStore/). Our [water quality dashboard](https://www.nps.gov/im/ncbn/water-quality-dashboard.htm) provides an interactive visualizer for this data and that of our other parks.
+
+---
+
+## Site Context
+
+Fire Island National Seashore (FIIS) is a 7,810 ha park on the South Shore of Long Island, New York. Approximately 46% of this area is submerged estuarine land in Great South Bay and Moriches Bay. Although FIIS owns only a minority portion of the submerged land in these bays, the area in park ownership is, nonetheless, extensive.
+
+The threat of nutrient enrichment is a primary management concern. Water quality monitoring follows Northeast Coastal and Barrier Network's *Protocol for Monitoring Estuarine Nutrient Enrichment* (Kopp and Neckles, 2009). The protocol's primary goal is to assess how estuarine natural resources are affected by changing nutrient inputs by determining the status and trends of response indicators within the monitored estuarine areas of each park.
+
+Presented here are condition status summaries of three key response indicators:
+
+1. Bottom water dissolved oxygen (DO)
+2. Surface water chlorophyll-a
+3. Water column light attenuation (Kd)
+
+Threshold values are used to determine "good," "fair," and "poor" condition categories (Table 1), which are consistent with those used by the US Environmental Protection Agency (USEPA) for national coastal condition reporting (USEPA 2001b, 2004) and thresholds used by the National Oceanic and Atmospheric Association for the National Estuarine Eutrophication Assessment (Bricker et al. 1999).
+
+Water clarity is expressed as Kd (m⁻¹). Cutoff values of Kd have been calculated from the USEPA criteria for turbidity, using the thresholds for areas with significant submerged aquatic vegetation (SAV).
+
+```{r table1-thresholds}
+thresholds_df <- data.frame(
+  Measure = c("Chlorophyll-a", "Dissolved oxygen", "Light attenuation"),
+  Good = c("< 5 \u00b5g/L", "> 5 mg/L", "< 0.92 m\u207b\u00b9"),
+  Fair = c("5\u201320 \u00b5g/L", "2\u20135 mg/L", "0.92\u20131.61 m\u207b\u00b9"),
+  Poor = c("> 20 \u00b5g/L", "< 2 mg/L", "> 1.61 m\u207b\u00b9")
+)
+
+kable(thresholds_df, caption = "Table 1: Threshold values associated with each measured nutrient enrichment condition category.", align = "lccc") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered")) %>%
+  column_spec(2, background = "#E8F5E9") %>%
+  column_spec(3, background = "#FFFDE7") %>%
+  column_spec(4, background = "#FFEBEE")
+```
+
+---
+
+## Bottom Water Dissolved Oxygen
+
+Bottom water DO concentration is an indirect indicator of nutrient load and direct indicator of estuarine water chemistry and organism health. Oxygen is consumed when microbial decomposers mineralize organic matter on and within estuarine sediments. When sediment organic matter increases due to nutrient over-enrichment, it can cause an overgrowth of nuisance algae. The resulting heightened microbial decomposition can lower DO concentrations in bottom waters. It can also lead to increased extent and duration of bottom water anoxia and toxic sulfide concentrations. Nutrient enrichment can, ultimately, impact fauna diversity and abundance and shift species dominance.
+
+During the `r current_year` summer index period, FIIS park-wide average bottom water dissolved oxygen concentration was **good within `r get_pct(do_df, "Good")`%** of the sampled estuarine area`r if (get_pct(do_df,"Fair")>0) paste0(", fair within ", get_pct(do_df,"Fair"), "%")``r if (get_pct(do_df,"Poor")>0) paste0(", and poor within ", get_pct(do_df,"Poor"), "%")`, with a park-wide weighted mean concentration of **`r round(current_do_val, 2)` mg/L**. Historically, bottom water dissolved oxygen has remained good across nearly all of the sampled estuarine area at FIIS in most index periods.
+
+---
+
+## Surface Water Chlorophyll-a
+
+Nutrient enrichment often stimulates phytoplankton production, leading to population growth. Phytoplankton growth is often nutrient-limited. Trends of increasing biomass can suggest increasing nutrient load. Surface water chlorophyll-a concentration is an indicator of phytoplankton population growth, nutrient enrichment, and overall water quality.
+
+During the `r current_year` summer index period, FIIS park-wide average surface water chlorophyll-a concentration was **`r tolower(chla_majority)` within `r get_pct(chla_df, chla_majority)`%** of the sampled estuarine area`r if (get_pct(chla_df,"Good")>0 && chla_majority!="Good") paste0(", good within ", get_pct(chla_df,"Good"), "%")``r if (get_pct(chla_df,"Fair")>0 && chla_majority!="Fair") paste0(", fair within ", get_pct(chla_df,"Fair"), "%")``r if (get_pct(chla_df,"Poor")>0) paste0(", and poor within ", get_pct(chla_df,"Poor"), "%")`, with a park-wide weighted mean concentration of **`r round(current_chla_val, 2)` \u00b5g/L**.
+`r if (!is.null(prior_data)) { prior_maj <- majority_condition(chla_prior_df); if (!is.na(prior_maj) && prior_maj != chla_majority) paste0("This marks a shift from the ", prior_year, " index period, when the majority condition was **", prior_maj, "**.") else paste0("This is consistent with the ", prior_year, " index period, when the majority condition was also **", prior_maj, "**.") }`
+
+---
+
+## Water Column Light Attenuation
+
+Submerged aquatic vegetation (SAV) provide important ecosystem services. SAV productivity and distribution depend on light. Light attenuation through the water column is dependent on concentrations of phytoplankton, which can correlate with nutrient enrichment, and suspended inorganic and dissolved organic matter. Regardless of current SAV presence, NCBN continues to monitor this critical SAV parameter, as it provides information relevant to the overall estuarine eutrophication status.
+
+During the `r current_year` summer index period, FIIS park-wide average water column light attenuation (Kd) was **good within `r get_pct(kd_df, "Good")`%** of the sampled estuarine area, fair within `r get_pct(kd_df, "Fair")`%, and poor within `r get_pct(kd_df, "Poor")`%`r if (get_pct(kd_df,"Missing")>0) paste0(". There was missing data for ", get_pct(kd_df,"Missing"), "% of the sampled area")`, with a park-wide weighted mean Kd of **`r round(current_kd_val, 2)` m\u207b\u00b9**.
+`r if (!is.null(prior_data)) { prior_maj <- majority_condition(kd_prior_df); if (!is.na(prior_maj) && prior_maj != kd_majority) paste0("This marks a shift from the ", prior_year, " index period, when the majority condition was **", prior_maj, "**.") else paste0("This is consistent with the ", prior_year, " index period, when the majority condition was also **", prior_maj, "**.") }`
+
+---
+
+## Conclusion
+
+In `r current_year`, Fire Island National Seashore's three response indicators showed the following park-wide majority conditions: bottom water dissolved oxygen was **`r do_majority`**, surface water chlorophyll-a was **`r chla_majority`**, and water column light attenuation (Kd) was **`r kd_majority`**.
+
+```{r conclusion-text, results='asis'}
+if (length(concern_indicators) == 0) {
+  cat(paste0("All three response indicators were in good condition across the majority of the sampled estuarine area during the ",
+             current_year, " index period, suggesting improved conditions relative to the nutrient over-enrichment concerns noted in prior reports."))
+} else {
+  cat(paste0("Conditions of these three status indicators at Fire Island National Seashore in ", current_year,
+             " indicate that the estuary continues to experience estuarine nutrient over-enrichment, driven primarily by ",
+             paste(concern_indicators, collapse = " and "), "."))
+}
+```
+
+---
+
+<div style="font-size: 0.85em; color: #555;">
+**Data source:** `r params$data_file`, filtered to Park = "`r params$park_code`". Condition percentages sum the pre-weighted area-percent fields (`Percent_tot_Strat` for dissolved oxygen, `Percent_Tot` for chlorophyll-a and light attenuation) grouped by condition classification for each sampled year. Weighted mean concentrations sum the pre-weighted concentration fields (`Weighted_DO`, `Weighted_CHYA`, `Weighted_Kd`) to produce a park-wide area-weighted mean for the current index period. Report card scores are a weighted blend of sampled area condition — 100% credit for Good, 50% credit for Fair, 0% for Poor — graded on a standard A (80-100) through F (0-20) scale with +/- subdivisions. This weighting scheme is *inspired by* the partial-credit philosophy behind NOAA's National Estuarine Eutrophication Assessment (Bricker et al., 1999) and the related ASSETS (ASSessment of EStuarine Trophic Status) model, which avoid treating all non-good conditions as equally severe. It is a simplified analog, not a reproduction of NOAA's official scoring methodology — the actual NEEA/ASSETS approach incorporates additional factors such as frequency and duration of impairment, spatial coverage weighting, and separate treatment of primary versus secondary eutrophication symptoms, which are beyond the scope of this brief.
+
+**Citation notes:**
+
+- Kopp, B.S. and H. Neckles. 2009. *A Protocol for Monitoring Estuarine Nutrient Enrichment*. National Park Service.
+- USEPA. 2001b, 2004. National Coastal Condition Reports.
+- Bricker, S.B. et al. 1999. National Estuarine Eutrophication Assessment. NOAA.
+
+*Adapted from: [NPS — Estuarine Nutrient Enrichment Status Report: Fire Island NS](https://www.nps.gov/articles/000/2021-estuarine-nutrient-enrichment-status-report-fire-island-ns.htm)*
+</div>
