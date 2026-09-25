@@ -16,21 +16,32 @@ output:
     fig_caption: false
     number_sections: false
     df_print: kable
+    theme: journal
+    css: ../Assets/journalnps.min.css
+    includes:
+      before_body:
+        - ../Assets/header.html
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 params:
   data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
   park_code: "FIIS"
   park_name: "Fire Island National Seashore"
+  sample_year: "latest"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# VERSION MARKER: v20 -- if this comment isn't found in your local file, the copy did not take.
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
 library(readxl)
 library(dplyr)
 library(tidyr)
+library(ggplot2)
+library(ggtext)
+library(grid)
 library(knitr)
 library(kableExtra)
 
+condition_colors <- c("Good" = "#6b7e06", "Fair" = "#b3bb23", "Poor" = "#bb4e23", "Missing" = "#9E9E9E")
 condition_levels <- c("Good", "Fair", "Poor", "Missing")
 ```
 
@@ -39,33 +50,130 @@ condition_levels <- c("Good", "Fair", "Poor", "Missing")
 raw <- read_excel(params$data_file, sheet = "Sheet 1")
 park_data <- raw %>% filter(Park == params$park_code)
 
-current_year <- max(park_data$Sample_Year, na.rm = TRUE)
+# --- Select which year to report on ---
+# params$sample_year = "latest" (default) uses the most recent year available for this park.
+# Set params$sample_year to a specific year (e.g. 2022 or "2022") to report on that year instead.
+available_years <- sort(unique(park_data$Sample_Year))
+
+if (identical(params$sample_year, "latest")) {
+  current_year <- max(available_years, na.rm = TRUE)
+} else {
+  requested_year <- suppressWarnings(as.numeric(params$sample_year))
+  if (is.na(requested_year) || !(requested_year %in% available_years)) {
+    stop(paste0(
+      "params$sample_year = '", params$sample_year, "' is not available for park '",
+      params$park_code, "'. Available years: ", paste(available_years, collapse = ", ")
+    ))
+  }
+  current_year <- requested_year
+}
+
 prior_years  <- sort(unique(park_data$Sample_Year[park_data$Sample_Year < current_year]), decreasing = TRUE)
 prior_year   <- if (length(prior_years) > 0) prior_years[1] else NA
 
 current_data <- park_data %>% filter(Sample_Year == current_year)
 prior_data   <- if (!is.na(prior_year)) park_data %>% filter(Sample_Year == prior_year) else NULL
 
-# --- Aggregation helper: sums the pre-weighted percent-of-area column by condition, for one year ---
-pct_by_condition <- function(data, cond_col, pct_col) {
+# --- Stratum names, for parks with more than one stratum (verified against published reports) ---
+# CACO stratum order confirmed against 2021 published DO/CHLA/Kd percentages (all three indicators,
+# park-wide and per-stratum) -- Stratum 1=Pleasant Bay, 2=Nauset Harbor, 3=Salt Ponds.
+# COLO stratum order confirmed against 2022 published DO/CHLA/Kd percentages (all three indicators,
+# park-wide and per-stratum) -- Stratum 1=Thoroughfare, 2=Tidal Creeks.
+stratum_names <- list(
+  CACO = c(`1` = "Pleasant Bay", `2` = "Nauset Harbor", `3` = "Salt Ponds"),
+  COLO = c(`1` = "Thoroughfare", `2` = "Tidal Creeks")
+)
+
+n_strata_park    <- length(unique(current_data$Stratum))
+is_multi_stratum <- n_strata_park > 1
+this_stratum_ids <- sort(unique(current_data$Stratum))
+this_stratum_names <- if (is_multi_stratum) stratum_names[[params$park_code]] else NULL
+
+# --- Aggregation logic, verified against published CACO (2021) and COLO (2022) percentages for
+# all three indicators (DO, Chlorophyll-a, Kd), both park-wide and per-stratum.
+#
+# Every row carries TWO pre-computed area-percent fields, regardless of indicator:
+#   - Percent_Tot        = this hexagon's share of the WHOLE PARK's area
+#   - Percent_tot_Strat  = this hexagon's share of its OWN STRATUM's area
+#
+# So the rule is simple and applies identically to DO, Chlorophyll-a, and Kd alike:
+#   - PARK-WIDE percentage  -> sum Percent_Tot directly (works regardless of stratum count)
+#   - PER-STRATUM percentage -> filter to that stratum, sum Percent_tot_Strat directly
+
+# --- Park-wide percent-of-area by condition, for one year ---
+pct_by_condition <- function(data, cond_col) {
   data %>%
     filter(!is.na(.data[[cond_col]]), .data[[cond_col]] != "") %>%
     group_by(Condition = .data[[cond_col]]) %>%
-    summarise(Percent = sum(.data[[pct_col]], na.rm = TRUE), .groups = "drop") %>%
+    summarise(Percent = sum(Percent_Tot, na.rm = TRUE), .groups = "drop") %>%
+    mutate(Percent = pmin(pmax(round(Percent, 6), 0), 100)) %>%  # guard against float overflow past 0-100
     mutate(Condition = ifelse(Condition == "", "Missing", Condition)) %>%
     complete(Condition = condition_levels, fill = list(Percent = 0)) %>%
     mutate(Condition = factor(Condition, levels = condition_levels)) %>%
     filter(!(Condition == "Missing" & Percent == 0))
 }
 
-do_df   <- pct_by_condition(current_data, "Condition_DO",   "Percent_tot_Strat")
-chla_df <- pct_by_condition(current_data, "Condition_CHLA", "Percent_Tot")
-kd_df   <- pct_by_condition(current_data, "Condition_Kd",   "Percent_Tot")
+# --- Per-stratum percent-of-area by condition (only meaningful for multi-stratum parks) ---
+pct_within_stratum <- function(data, stratum_id, cond_col) {
+  data %>%
+    filter(Stratum == stratum_id, !is.na(.data[[cond_col]]), .data[[cond_col]] != "") %>%
+    group_by(Condition = .data[[cond_col]]) %>%
+    summarise(Percent = sum(Percent_tot_Strat, na.rm = TRUE), .groups = "drop") %>%
+    mutate(Percent = pmin(pmax(round(Percent, 6), 0), 100)) %>%  # guard against float overflow past 0-100
+    mutate(Condition = ifelse(Condition == "", "Missing", Condition)) %>%
+    complete(Condition = condition_levels, fill = list(Percent = 0)) %>%
+    mutate(Condition = factor(Condition, levels = condition_levels)) %>%
+    filter(!(Condition == "Missing" & Percent == 0))
+}
+
+do_df   <- pct_by_condition(current_data, "Condition_DO")
+chla_df <- pct_by_condition(current_data, "Condition_CHLA")
+kd_df   <- pct_by_condition(current_data, "Condition_Kd")
+
+# --- Build a Year x Condition long table across ALL sampled years, for the historic trend charts ---
+build_trend_df <- function(data, cond_col, stratum_id = NULL) {
+  yrs <- sort(unique(data$Sample_Year))
+  bind_rows(lapply(yrs, function(y) {
+    yr_data <- data %>% filter(Sample_Year == y)
+    result <- if (is.null(stratum_id)) {
+      pct_by_condition(yr_data, cond_col)
+    } else {
+      pct_within_stratum(yr_data, stratum_id, cond_col)
+    }
+    result %>% mutate(Year = y)
+  }))
+}
+
+# --- Build a combined, faceted trend table: one row set per Year x Stratum, for side-by-side panels ---
+build_trend_df_faceted <- function(data, cond_col, stratum_ids, stratum_label_map) {
+  bind_rows(lapply(stratum_ids, function(sid) {
+    build_trend_df(data, cond_col, stratum_id = sid) %>%
+      mutate(StratumLabel = stratum_label_map[[as.character(sid)]])
+  })) %>%
+    mutate(StratumLabel = factor(StratumLabel, levels = unname(stratum_label_map[as.character(stratum_ids)])))
+}
+
+do_trend   <- build_trend_df(park_data, "Condition_DO")
+chla_trend <- build_trend_df(park_data, "Condition_CHLA")
+kd_trend   <- build_trend_df(park_data, "Condition_Kd")
+
+if (is_multi_stratum) {
+  do_trend_strata   <- build_trend_df_faceted(park_data, "Condition_DO",   this_stratum_ids, this_stratum_names)
+  chla_trend_strata <- build_trend_df_faceted(park_data, "Condition_CHLA", this_stratum_ids, this_stratum_names)
+  kd_trend_strata   <- build_trend_df_faceted(park_data, "Condition_Kd",   this_stratum_ids, this_stratum_names)
+}
 
 # --- Park-wide area-weighted mean concentration for the current year ---
 current_kd_val   <- sum(current_data$Weighted_Kd,   na.rm = TRUE)
 current_do_val   <- sum(current_data$Weighted_DO,   na.rm = TRUE)
 current_chla_val <- sum(current_data$Weighted_CHYA, na.rm = TRUE)
+
+# --- Per-stratum weighted mean concentration (uses the _StratInc fields, which give a true
+# standalone mean for that stratum -- unlike Weighted_DO/CHYA/Kd, which only give that
+# stratum's fractional contribution toward the park-wide total). ---
+stratum_weighted_mean <- function(data, stratum_id, field) {
+  sum(data[data$Stratum == stratum_id, field], na.rm = TRUE)
+}
 
 # Pull a single value out of a condition table, defaulting to 0 if absent
 get_pct <- function(df, cond) {
@@ -86,15 +194,30 @@ chla_majority <- majority_condition(chla_df)
 kd_majority   <- majority_condition(kd_df)
 
 if (!is.null(prior_data)) {
-  do_prior_df   <- pct_by_condition(prior_data, "Condition_DO",   "Percent_tot_Strat")
-  chla_prior_df <- pct_by_condition(prior_data, "Condition_CHLA", "Percent_Tot")
-  kd_prior_df   <- pct_by_condition(prior_data, "Condition_Kd",   "Percent_Tot")
+  do_prior_df   <- pct_by_condition(prior_data, "Condition_DO")
+  chla_prior_df <- pct_by_condition(prior_data, "Condition_CHLA")
+  kd_prior_df   <- pct_by_condition(prior_data, "Condition_Kd")
 }
 
 concern_indicators <- c(
   if (!is.na(do_majority)   && do_majority   != "Good") "bottom water dissolved oxygen",
-  if (!is.na(chla_majority) && chla_majority != "Good") "surface water chlorophyll-a",
+  if (!is.na(chla_majority) && chla_majority != "Good") "surface water chlorophyll-<em>a</em>",
   if (!is.na(kd_majority)   && kd_majority   != "Good") "water column light attenuation"
+)
+
+# --- Park-specific Site Context paragraphs, keyed by park_code ---
+site_context_text <- list(
+  FIIS = "Fire Island National Seashore (FIIS) is a 7,810 ha park on the South Shore of Long Island, New York. Approximately 46% of this area is submerged estuarine land in Great South Bay and Moriches Bay. Although FIIS owns only a minority portion of the submerged land in these bays, the area in park ownership is, nonetheless, extensive.",
+
+  CACO = "Cape Cod is a large glacial moraine peninsula that extends 96.5 km into the Atlantic Ocean from the coast of Massachusetts. Cape Cod National Seashore (CACO) is located on the outer portion of Cape Cod. Almost all the estuarine habitat at CACO is associated with two large coastal lagoon systems, Pleasant Bay (PB) and Nauset Harbor/Marsh (NH). Due to restricted flushing with the ocean and residential development pressures outside the seashore boundary, the National Park Service (NPS) interest in estuarine condition extends throughout these coastal embayments, not just in the areas within the seashore boundary. Pleasant Bay and Nauset Harbor are each fringed by small, deep, glacially-formed kettle-hole salt ponds that flush with seawater from the lagoons. Because deep water replacement may be restricted through density stratification, and the presence of shallow sills at their mouths, these estuarine kettle-holes are particularly susceptible to over-enrichment.",
+
+  GATE = "Gateway National Recreation Area (GATE) consists of 10,783 hectares of coastal uplands, freshwater ponds, marshes, bays, beaches, and mudflats. Established in 1972, it is divided into three geographically separate units: Jamaica Bay, Staten Island, and Sandy Hook. The Jamaica Bay Unit encompasses almost all of island uplands and wetlands within Jamaica Bay. Thus, estuarine resources of GATE are fully contained within Jamaica Bay. The target population for estuarine monitoring includes 100% of these resources, approximately 4,615 ha, plus an additional 1,257 ha within Jamaica Bay but outside the park boundary.",
+
+  COLO = "Colonial National Historical Park (COLO) consists of two significant land holdings, the Yorktown and Jamestown Units. These are connected by a narrow traffic corridor, the Colonial Parkway. COLO estuarine sampling area is divided into two strata. The first, a tidal creek stratum, includes all estuarine resources falling inside park boundaries. This includes small tidal creeks that drain off park wetlands, the small regions of park ownership where the Colonial Parkway overpasses tidal creeks, and a few additional areas where the park boundary does not precisely coincide with a tidal creek shoreline. The second, Jamestown Island/Thoroughfare stratum, includes non-NPS estuarine resources in Sandy Bay, Back River and The Thorofare. The sample area is defined to exclude the non-NPS estuarine resources associated with the James River or York River. These are major systems outside COLO boundaries and attempting to monitor them in any meaningful fashion would severely dilute NPS efforts within the park and at Jamestown. Between both strata, approximately 293 ha of estuary are monitored, including 100% of the estuarine resources that fall within the park boundary.",
+
+  GEWA = "George Washington Birthplace National Monument (GEWA) is located along the tidal reaches of the Potomac River in Westmoreland County, Virginia. The Potomac shoreline delineates the northern boundary of the monument, where three small sub-basins drain into the Potomac. The largest and most significant estuarine resource is Popes Creek, which has restricted flushing with the Potomac and is closely linked to GEWA resources. The monitoring area covers all tidal portions of Popes Creek, which includes approximately 137.7 ha of estuary outside and 4.7 ha inside the park.",
+
+  ASIS = "Assateague Island National Seashore (ASIS) is a 60km long barrier island off the eastern coast of the Delmarva Peninsula, extending into the Atlantic Ocean. The northern two-thirds of the island is in Maryland, while the southern third is in Virginia. ASIS one of two NER coastal parks with a highly developed water-quality monitoring program, through a joint effort among many federal and state partners. The park boundary encircles the NPS holdings, the U.S. Fish and Wildlife Service's Chincoteague National Wildlife Refuge, and Maryland's Assateague State Park. Further, Sinepuxent Bay and the MD portion of Chincoteague Bay are managed under the Maryland Coastal Bays Program as a National Estuary Program estuary. Consequently, the park has monitoring interests throughout the coastal bay, and is not confined in its interests to the area within the park boundary. Approximately 37,319 ha of estuary is monitored for this protocol. About 6,867 ha of that area falls inside park boundaries, representing 100% of NPS estuarine resources within ASIS."
 )
 ```
 
@@ -127,7 +250,8 @@ trend_arrow <- function(delta) {
 }
 
 scorecard_df <- data.frame(
-  Indicator = c("Dissolved Oxygen", "Chlorophyll-a", "Water Clarity (Kd)"),
+  Indicator = c("Dissolved Oxygen", "Chlorophyll-<em>a</em>", "Water Clarity (K<sub>d</sub>)"),
+  Condition = c(do_majority, chla_majority, kd_majority),
   Score     = c(weighted_score(do_df), weighted_score(chla_df), weighted_score(kd_df)),
   PriorScore = c(
     if (!is.null(prior_data)) weighted_score(do_prior_df)   else NA,
@@ -143,13 +267,320 @@ scorecard_df$Trend <- sapply(scorecard_df$Delta, trend_arrow)
 scorecard_display <- scorecard_df %>%
   transmute(
     Indicator,
+    Condition,
     `Score (%)` = round(Score),
     Grade,
     Trend
   )
 ```
 
+```{r indicator-sentence-helpers}
+# --- Joins a vector of clause strings into a grammatically correct list ---
+# 1 item:  "good within 99.5%"
+# 2 items: "good within 99.5% and fair within 0.5%"                (no comma before "and")
+# 3 items: "good within 88.8%, fair within 6.9%, and poor within 4.3%"  (serial/Oxford comma)
+join_list_with_and <- function(parts) {
+  n <- length(parts)
+  if (n == 0) return("")
+  if (n == 1) return(parts[1])
+  if (n == 2) return(paste0(parts[1], " and ", parts[2]))
+  paste0(paste(parts[1:(n-1)], collapse = ", "), ", and ", parts[n])
+}
+
+# --- Builds a "good/fair/poor" sentence for indicators that always lead with "good" (DO style) ---
+build_do_sentence <- function(df, area_label) {
+  good <- get_pct(df, "Good"); fair <- get_pct(df, "Fair"); poor <- get_pct(df, "Poor")
+  missing <- get_pct(df, "Missing")
+
+  parts <- paste0("**good within ", good, "%**")
+  if (fair > 0) parts <- c(parts, paste0("fair within ", fair, "%"))
+  if (poor > 0) parts <- c(parts, paste0("poor within ", poor, "%"))
+
+  sentence <- join_list_with_and(parts)
+  missing_clause <- if (missing > 0) paste0(". There was missing data for ", missing, "% of the sampled area") else ""
+  paste0(sentence, " ", area_label, missing_clause, ".")
+}
+
+# --- Builds a majority-led sentence (CHLA/Kd style), with optional prior-period comparison ---
+build_majority_sentence <- function(df, area_label, prior_df = NULL) {
+  majority <- majority_condition(df)
+  if (is.na(majority)) return("No condition data are available for this area.")
+
+  parts <- paste0("**", tolower(majority), " within ", get_pct(df, majority), "%**")
+  other_conds <- setdiff(c("Good", "Fair", "Poor"), majority)
+  for (c in other_conds) {
+    p <- get_pct(df, c)
+    if (p > 0) parts <- c(parts, paste0(tolower(c), " within ", p, "%"))
+  }
+
+  sentence <- paste0(join_list_with_and(parts), " ", area_label, ".")
+
+  if (!is.null(prior_df)) {
+    prior_majority <- majority_condition(prior_df)
+    if (!is.na(prior_majority)) {
+      comparison <- if (prior_majority != majority) {
+        paste0(" This marks a shift from the prior index period, when the majority condition was **", tolower(prior_majority), "**.")
+      } else {
+        paste0(" This is consistent with the prior index period, when the majority condition was also **", tolower(prior_majority), "**.")
+      }
+      sentence <- paste0(sentence, comparison)
+    }
+  }
+  sentence
+}
+```
+
+```{r plot-functions}
+# --- Historic trend chart: 100%-stacked horizontal bars, one per sampled year, MOST RECENT YEAR
+# AT THE TOP, current year boxed ---
+plot_trend <- function(trend_df, current_year, title) {
+  years_sorted <- sort(unique(trend_df$Year), decreasing = TRUE)   # most recent first -> top of chart
+  axis_order   <- rev(years_sorted)                                 # oldest first -> matches actual y-axis positions
+  current_pos  <- which(axis_order == current_year)                 # position must be computed against axis_order, not years_sorted
+
+  # Manually compute stack positions (xmin/xmax) so bar HEIGHT can vary per row via geom_tile,
+  # which geom_col()/position_stack() can't do (geom_col only supports one fixed width per layer)
+  trend_df <- trend_df %>%
+    mutate(Percent    = pmin(pmax(round(Percent, 2), 0), 100),  # clamp/round to avoid float overflow past scale limits
+           Condition  = factor(Condition, levels = condition_levels),
+           YearFactor = factor(Year, levels = axis_order),
+           is_current = Year == current_year) %>%
+    arrange(Year, Condition) %>%          # ascending order (Good, Fair, Poor, Missing) so stack reads left-to-right matching the legend
+    group_by(Year) %>%
+    mutate(xmax = cumsum(Percent),
+           xmin = xmax - Percent,
+           x_mid = (xmin + xmax) / 2,
+           bar_height = ifelse(is_current, 0.85, 0.68)) %>%  # current year renders visibly thicker
+    ungroup()
+
+  # Manually build year labels (instead of relying on ggtext markdown on axis text, which has
+  # proven unreliable across ggplot2/ggtext versions for axis.text specifically). Default axis
+  # text is hidden, and a geom_text() layer draws the labels instead, since geom_text() supports
+  # a per-row `fontface` aesthetic -- giving reliable bold-vs-plain control with no markdown needed.
+  label_df <- data.frame(YearFactor = factor(axis_order, levels = axis_order),
+                          label = as.character(axis_order),
+                          is_current = axis_order == current_year)
+
+  ggplot(trend_df, aes(y = YearFactor)) +
+    geom_tile(aes(x = x_mid, width = Percent, height = bar_height, fill = Condition, alpha = is_current),
+              color = "white", linewidth = 0.4) +
+    annotate("rect", xmin = -2, xmax = 102,
+             ymin = current_pos - 0.46, ymax = current_pos + 0.46,
+             fill = NA, color = "#212121", linewidth = 1) +
+    geom_text(data = label_df,
+              aes(x = -20, y = YearFactor, label = label, fontface = ifelse(is_current, "bold", "plain")),
+              hjust = 1, size = 3.9, color = "black", inherit.aes = FALSE) +
+    scale_fill_manual(values = condition_colors, name = NULL, drop = FALSE) +
+    scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.4), guide = "none") +
+    scale_x_continuous(labels = function(x) paste0(x, "%"), breaks = seq(0, 100, 25),
+                        position = "top", expand = expansion(mult = c(0, 0.03)), limits = c(0, 100),
+                        oob = scales::squish) +
+    coord_cartesian(clip = "off") +
+    labs(title = title, x = NULL, y = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor   = element_blank(),
+      panel.grid.major.x = element_line(color = "gray85"),
+      axis.text.y  = element_blank(),
+      axis.ticks.y = element_blank(),
+      legend.position = "bottom",
+      plot.title = ggtext::element_markdown(hjust = 0.5, face = "bold", size = 12, margin = margin(b = 8)),
+      plot.margin = margin(t = 10, r = 14, b = 5.5, l = 70)
+    )
+}
+
+# --- Faceted historic trend chart: one panel per stratum, side by side, MOST RECENT YEAR AT THE
+# TOP in every panel, current year boxed. Used for multi-stratum parks' strata-only bar chart. ---
+plot_trend_faceted <- function(trend_df, current_year, subtitle) {
+  years_sorted <- sort(unique(trend_df$Year), decreasing = TRUE)
+  axis_order   <- rev(years_sorted)                     # oldest first -> matches actual y-axis positions
+  current_pos  <- which(axis_order == current_year)      # position must be computed against axis_order, not years_sorted
+
+  trend_df <- trend_df %>%
+    mutate(Percent    = pmin(pmax(round(Percent, 2), 0), 100),  # clamp/round to avoid float overflow past scale limits
+           Condition  = factor(Condition, levels = condition_levels),
+           YearFactor = factor(Year, levels = axis_order),
+           is_current = Year == current_year) %>%
+    arrange(StratumLabel, Year, Condition) %>%   # ascending order (Good, Fair, Poor, Missing) matches legend
+    group_by(StratumLabel, Year) %>%
+    mutate(xmax = cumsum(Percent),
+           xmin = xmax - Percent,
+           x_mid = (xmin + xmax) / 2,
+           bar_height = ifelse(is_current, 0.85, 0.68)) %>%
+    ungroup()
+
+  # Manually build year labels (see plot_trend() for why -- avoids relying on ggtext markdown on
+  # axis text, which is unreliable). Applied per-facet-panel via geom_text().
+  strata_present <- unique(trend_df$StratumLabel)
+  label_df <- expand.grid(YearFactor = factor(axis_order, levels = axis_order),
+                           StratumLabel = strata_present) %>%
+    mutate(label = as.character(YearFactor),
+           is_current = as.character(YearFactor) == as.character(current_year))
+
+  box_df <- data.frame(StratumLabel = unique(trend_df$StratumLabel))
+
+  ggplot(trend_df, aes(y = YearFactor)) +
+    geom_tile(aes(x = x_mid, width = Percent, height = bar_height, fill = Condition, alpha = is_current),
+              color = "white", linewidth = 0.3) +
+    geom_rect(data = box_df, inherit.aes = FALSE,
+              aes(xmin = -2, xmax = 102, ymin = current_pos - 0.46, ymax = current_pos + 0.46),
+              fill = NA, color = "#212121", linewidth = 0.9) +
+    geom_text(data = label_df,
+              aes(x = -3, y = YearFactor, label = label, fontface = ifelse(is_current, "bold", "plain")),
+              hjust = 1, size = 3.2, color = "black", inherit.aes = FALSE) +
+    facet_wrap(~ StratumLabel, nrow = 1) +
+    scale_fill_manual(values = condition_colors, name = NULL, drop = FALSE) +
+    scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.4), guide = "none") +
+    scale_x_continuous(labels = function(x) paste0(x, "%"), breaks = seq(0, 100, 25),
+                        position = "top", expand = c(0, 0), limits = c(0, 100),
+                        oob = scales::squish) +
+    coord_cartesian(clip = "off") +
+    labs(title = "Percent of Estuarine Area", subtitle = subtitle, x = NULL, y = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor   = element_blank(),
+      panel.grid.major.x = element_line(color = "gray85"),
+      axis.text.y  = element_blank(),
+      axis.ticks.y = element_blank(),
+      strip.text   = element_text(face = "bold", size = 10),
+      legend.position = "bottom",
+      plot.title = ggtext::element_markdown(hjust = 0.5, face = "bold", size = 13),
+      plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray30"),
+      plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 30)
+    )
+}
+
+# --- Pie chart: park-wide condition breakdown for one indicator, one year (currently unused,
+# kept available in case a pie chart is wanted again later) ---
+plot_pie <- function(df, title) {
+  pie_df <- df %>%
+    filter(Condition %in% condition_levels, Percent > 0) %>%
+    mutate(Condition = factor(Condition, levels = condition_levels)) %>%
+    arrange(Condition) %>%
+    mutate(
+      ymax = cumsum(Percent),
+      ymin = c(0, head(ymax, -1)),
+      label_pos = (ymax + ymin) / 2,
+      label = paste0(round(Percent, 1), "%")
+    )
+
+  ggplot(pie_df) +
+    geom_rect(aes(xmin = 0, xmax = 1, ymin = ymin, ymax = ymax, fill = Condition)) +
+    geom_text(aes(x = 0.5, y = label_pos, label = label), color = "white",
+              fontface = "bold", size = 3.8) +
+    coord_polar(theta = "y") +
+    xlim(0, 1) +
+    scale_fill_manual(values = condition_colors, name = NULL, drop = FALSE) +
+    labs(title = title) +
+    theme_void(base_size = 12) +
+    theme(
+      legend.position = "bottom",
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 13)
+    )
+}
+
+# --- Gauge chart: semicircular dial with colored threshold bands, needle at current value ---
+make_gauge <- function(value, bands, max_value, unit, title) {
+  to_angle <- function(v) 180 - 180 * (v / max_value)
+
+  arc_points <- function(a_start, a_end, r, n = 60) {
+    angs <- seq(a_start, a_end, length.out = n) * pi / 180
+    data.frame(x = r * cos(angs), y = r * sin(angs))
+  }
+
+  r_out <- 1; r_in <- 0.62
+
+  band_polys <- do.call(rbind, lapply(seq_len(nrow(bands)), function(i) {
+    a1 <- to_angle(bands$from[i]); a2 <- to_angle(bands$to[i])
+    poly <- rbind(arc_points(a1, a2, r_out), arc_points(a2, a1, r_in))
+    poly$group <- bands$label[i]
+    poly$fill  <- bands$color[i]
+    poly
+  }))
+
+  val_clamped  <- max(0, min(value, max_value))
+  needle_angle <- to_angle(val_clamped) * pi / 180
+  needle_df <- data.frame(x = c(0, 0.5 * cos(needle_angle)),
+                           y = c(0, 0.5 * sin(needle_angle)))
+
+  ticks <- sort(unique(c(0, bands$from, bands$to, max_value)))
+  tick_df <- data.frame(val = ticks, ang = to_angle(ticks) * pi / 180)
+  tick_df$xr <- 1.16 * cos(tick_df$ang)
+  tick_df$yr <- 1.16 * sin(tick_df$ang)
+  tick_df$lab <- ifelse(tick_df$val == round(tick_df$val), as.character(tick_df$val), sprintf("%.2f", tick_df$val))
+
+  bands$mid     <- (bands$from + bands$to) / 2
+  bands$ang_mid <- to_angle(bands$mid) * pi / 180
+  bands$xl <- 0.81 * cos(bands$ang_mid)
+  bands$yl <- 0.81 * sin(bands$ang_mid)
+
+  ggplot() +
+    geom_polygon(data = band_polys, aes(x = x, y = y, group = group, fill = fill)) +
+    scale_fill_identity() +
+    geom_segment(data = needle_df[1, ],
+                 aes(x = x, y = y, xend = needle_df$x[2], yend = needle_df$y[2]),
+                 linewidth = 1.7, color = "#212121", lineend = "round") +
+    geom_point(aes(x = 0, y = 0), size = 5, color = "#212121") +
+    geom_text(data = tick_df, aes(x = xr, y = yr, label = lab), size = 3.3, color = "gray30") +
+    geom_text(data = bands, aes(x = xl, y = yl, label = label), size = 3.7, fontface = "bold", color = "#1a1a1a") +
+    annotate("text", x = 0, y = -0.32, label = paste0(round(value, 2), " ", unit),
+             size = 5.6, fontface = "bold", color = "#212121") +
+    annotate("text", x = 0, y = 1.34, label = title, size = 4.5, fontface = "bold") +
+    coord_fixed(xlim = c(-1.35, 1.35), ylim = c(-0.5, 1.5)) +
+    theme_void()
+}
+
+# --- Composite gauge figure: one large park-wide gauge, plus optional smaller stratum gauges
+# arranged in a row underneath. If no sub-gauges are supplied, just prints the main gauge alone. ---
+plot_gauge_composite <- function(main_gauge, sub_gauges = list()) {
+  if (length(sub_gauges) == 0) {
+    print(main_gauge)
+    return(invisible(NULL))
+  }
+  n_sub <- length(sub_gauges)
+  grid.newpage()
+  layout <- grid.layout(nrow = 2, ncol = n_sub, heights = unit(c(2, 1), "null"))
+  pushViewport(viewport(layout = layout))
+
+  pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1:n_sub))
+  print(main_gauge, newpage = FALSE)
+  popViewport()
+
+  for (i in seq_len(n_sub)) {
+    pushViewport(viewport(layout.pos.row = 2, layout.pos.col = i))
+    print(sub_gauges[[i]], newpage = FALSE)
+    popViewport()
+  }
+  popViewport()
+}
+
+# Threshold bands per indicator (from, to, in left-to-right dial order)
+kd_bands <- data.frame(
+  label = c("Good", "Fair", "Poor"),
+  from  = c(0, 0.92, 1.61),
+  to    = c(0.92, 1.61, 2.5),
+  color = c(condition_colors[["Good"]], condition_colors[["Fair"]], condition_colors[["Poor"]])
+)
+chla_bands <- data.frame(
+  label = c("Good", "Fair", "Poor"),
+  from  = c(0, 5, 20),
+  to    = c(5, 20, 30),
+  color = c(condition_colors[["Good"]], condition_colors[["Fair"]], condition_colors[["Poor"]])
+)
+do_bands <- data.frame(
+  label = c("Poor", "Fair", "Good"),
+  from  = c(0, 2, 5),
+  to    = c(2, 5, 12),
+  color = c(condition_colors[["Poor"]], condition_colors[["Fair"]], condition_colors[["Good"]])
+)
+```
+
 <style>
+body, p {
+  text-align: justify;
+}
 .status-table td, .status-table th { text-align: center; vertical-align: middle; }
 .quick-dive-box {
   background-color: #EAF2F8;
@@ -157,9 +588,53 @@ scorecard_display <- scorecard_df %>%
   padding: 12px 18px;
   margin-bottom: 20px;
 }
+.site-context-flex {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.site-context-text {
+  flex: 2;
+}
+.site-context-map {
+  flex: 1;
+  min-width: 220px;
+}
+.map-placeholder {
+  background-color: #eeeeee;
+  border: 1px solid #cccccc;
+  padding: 70px 10px;
+  text-align: center;
+  color: #888888;
+  font-size: 0.9em;
+}
+.map-caption {
+  font-size: 0.8em;
+  color: #666666;
+  text-align: center;
+  margin-top: 6px;
+}
+.indicator-flex {
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+.indicator-text {
+  flex: 3;
+}
+.indicator-gauge {
+  flex: 2;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
 </style>
 
-## Quick Dive
+## Shallow Dive
 
 <div class="quick-dive-box">
 Many of our coastal parks are home to dynamic estuaries, where saltwater meets freshwater. These waters also experience the detrimental effects of estuarine nutrient enrichment, largely from human activities, that impact water quality. The Northeast Coastal and Barrier Network (NCBN) parks depend on high-quality aquatic resources to sustain complex estuarine and near-shore ecosystems.
@@ -169,10 +644,10 @@ Many of our coastal parks are home to dynamic estuaries, where saltwater meets f
 
 ```{r condition-note, results='asis'}
 if (length(concern_indicators) == 0) {
-  cat(paste0("*Note: All three response indicators at ", params$park_code, " were in good condition during the ",
+  cat(paste0("*All three response indicators at ", params$park_code, " were in good condition during the ",
              current_year, " index period.*"))
 } else {
-  cat(paste0("*Note: Condition of ", paste(concern_indicators, collapse = " and "),
+  cat(paste0("*Condition of ", paste(concern_indicators, collapse = " and "),
              " at ", params$park_code, " in ", current_year,
              " indicates that the estuarine system remains nutrient over-enriched.*"))
 }
@@ -181,7 +656,7 @@ if (length(concern_indicators) == 0) {
 ```{r scorecard-table}
 kable(scorecard_display,
       caption = paste0(params$park_code, " Indicator Report Card — ", current_year),
-      align = "lccc") %>%
+      align = "lcccc", escape = FALSE, format = "html") %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered"))
 ```
 
@@ -193,29 +668,44 @@ kable(scorecard_display,
 
 ## Site Context
 
-Fire Island National Seashore (FIIS) is a 7,810 ha park on the South Shore of Long Island, New York. Approximately 46% of this area is submerged estuarine land in Great South Bay and Moriches Bay. Although FIIS owns only a minority portion of the submerged land in these bays, the area in park ownership is, nonetheless, extensive.
+<div class="site-context-flex">
+<div class="site-context-text">
+`r site_context_text[[params$park_code]]`
+</div>
+<div class="site-context-map">
+<div class="map-placeholder">[ Map of `r params$park_name` estuarine monitoring area ]</div>
+<div class="map-caption">Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nutrient enrichment.</div>
+</div>
+</div>
 
 The threat of nutrient enrichment is a primary management concern. Water quality monitoring follows Northeast Coastal and Barrier Network's *Protocol for Monitoring Estuarine Nutrient Enrichment* (Kopp and Neckles, 2009). The protocol's primary goal is to assess how estuarine natural resources are affected by changing nutrient inputs by determining the status and trends of response indicators within the monitored estuarine areas of each park.
 
 Presented here are condition status summaries of three key response indicators:
 
 1. Bottom water dissolved oxygen (DO)
-2. Surface water chlorophyll-a
-3. Water column light attenuation (Kd)
+2. Surface water chlorophyll-*a*
+3. Water column light attenuation (K<sub>d</sub>)
+
+```{r strata-note, results='asis'}
+if (is_multi_stratum) {
+  strat_list_text <- paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", ")
+  cat(paste0("The condition of these indicators is presented for the entire monitored area, providing a park-wide condition across all strata, and for each individual stratum: ", strat_list_text, "."))
+}
+```
 
 Threshold values are used to determine "good," "fair," and "poor" condition categories (Table 1), which are consistent with those used by the US Environmental Protection Agency (USEPA) for national coastal condition reporting (USEPA 2001b, 2004) and thresholds used by the National Oceanic and Atmospheric Association for the National Estuarine Eutrophication Assessment (Bricker et al. 1999).
 
-Water clarity is expressed as Kd (m⁻¹). Cutoff values of Kd have been calculated from the USEPA criteria for turbidity, using the thresholds for areas with significant submerged aquatic vegetation (SAV).
+Water clarity is expressed as K<sub>d</sub> (m<sup>-1</sup>). Cutoff values of K<sub>d</sub> have been calculated from the USEPA criteria for turbidity, using the thresholds for areas with significant submerged aquatic vegetation (SAV).
 
 ```{r table1-thresholds}
 thresholds_df <- data.frame(
-  Measure = c("Chlorophyll-a", "Dissolved oxygen", "Light attenuation"),
-  Good = c("< 5 \u00b5g/L", "> 5 mg/L", "< 0.92 m\u207b\u00b9"),
-  Fair = c("5\u201320 \u00b5g/L", "2\u20135 mg/L", "0.92\u20131.61 m\u207b\u00b9"),
-  Poor = c("> 20 \u00b5g/L", "< 2 mg/L", "> 1.61 m\u207b\u00b9")
+  Measure = c("Dissolved oxygen", "Chlorophyll-<em>a</em>", "Light attenuation (K<sub>d</sub>)"),
+  Good = c("> 5 mg/L", "< 5 \u00b5g/L", "< 0.92 m<sup>-1</sup>"),
+  Fair = c("2\u20135 mg/L", "5\u201320 \u00b5g/L", "0.92\u20131.61 m<sup>-1</sup>"),
+  Poor = c("< 2 mg/L", "> 20 \u00b5g/L", "> 1.61 m<sup>-1</sup>")
 )
 
-kable(thresholds_df, caption = "Table 1: Threshold values associated with each measured nutrient enrichment condition category.", align = "lccc") %>%
+kable(thresholds_df, format = "html", caption = "Table 1: Threshold values associated with each measured nutrient enrichment condition category.", align = "lccc", escape = FALSE) %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered")) %>%
   column_spec(2, background = "#E8F5E9") %>%
   column_spec(3, background = "#FFFDE7") %>%
@@ -226,40 +716,191 @@ kable(thresholds_df, caption = "Table 1: Threshold values associated with each m
 
 ## Bottom Water Dissolved Oxygen
 
+<div class="indicator-flex">
+<div class="indicator-text">
+
 Bottom water DO concentration is an indirect indicator of nutrient load and direct indicator of estuarine water chemistry and organism health. Oxygen is consumed when microbial decomposers mineralize organic matter on and within estuarine sediments. When sediment organic matter increases due to nutrient over-enrichment, it can cause an overgrowth of nuisance algae. The resulting heightened microbial decomposition can lower DO concentrations in bottom waters. It can also lead to increased extent and duration of bottom water anoxia and toxic sulfide concentrations. Nutrient enrichment can, ultimately, impact fauna diversity and abundance and shift species dominance.
 
-During the `r current_year` summer index period, FIIS park-wide average bottom water dissolved oxygen concentration was **good within `r get_pct(do_df, "Good")`%** of the sampled estuarine area`r if (get_pct(do_df,"Fair")>0) paste0(", fair within ", get_pct(do_df,"Fair"), "%")``r if (get_pct(do_df,"Poor")>0) paste0(", and poor within ", get_pct(do_df,"Poor"), "%")`, with a park-wide weighted mean concentration of **`r round(current_do_val, 2)` mg/L**. Historically, bottom water dissolved oxygen has remained good across nearly all of the sampled estuarine area at FIIS in most index periods.
+```{r do-section, results='asis'}
+if (is_multi_stratum) cat("#### Park-wide\n\n")
+cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
+           " park-wide average bottom water dissolved oxygen concentrations were ",
+           build_do_sentence(do_df, "of the total sampled estuarine area"),
+           " with a park-wide weighted mean concentration of **", round(current_do_val, 2), " mg/L**.\n\n"))
+
+if (is_multi_stratum) {
+  for (sid in this_stratum_ids) {
+    sname <- this_stratum_names[[as.character(sid)]]
+    strat_do_df <- pct_within_stratum(current_data, sid, "Condition_DO")
+    cat(paste0("#### ", sname, "\n\n"))
+    cat(paste0("Average bottom water DO concentration was ",
+               build_do_sentence(strat_do_df, paste0("of the ", sname, " stratum")), "\n\n"))
+  }
+}
+```
+
+</div>
+<div class="indicator-gauge">
+
+```{r do-gauge-composite, fig.width=5, fig.height=if (is_multi_stratum) 5.5 else 4.2}
+main_gauge_do <- make_gauge(current_do_val, do_bands, 12, "mg/L", "Dissolved Oxygen (Park-wide)")
+sub_gauges_do <- list()
+if (is_multi_stratum) {
+  for (sid in this_stratum_ids) {
+    sname <- this_stratum_names[[as.character(sid)]]
+    val <- stratum_weighted_mean(current_data, sid, "Weighted_DO_StratInc")
+    sub_gauges_do[[sname]] <- make_gauge(val, do_bands, 12, "mg/L", sname)
+  }
+}
+plot_gauge_composite(main_gauge_do, sub_gauges_do)
+```
+
+</div>
+</div>
+
+```{r do-bar, fig.width=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5, fig.height=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5}
+if (is_multi_stratum) {
+  plot_trend_faceted(do_trend_strata, current_year,
+                      paste0(params$park_code, " Bottom Water Dissolved Oxygen — Historic Trend by Stratum"))
+} else {
+  plot_trend(do_trend, current_year, paste0(params$park_code, " Bottom Water Dissolved Oxygen — Historic Trend"))
+}
+```
 
 ---
 
-## Surface Water Chlorophyll-a
+## Surface Water Chlorophyll-*a*
 
-Nutrient enrichment often stimulates phytoplankton production, leading to population growth. Phytoplankton growth is often nutrient-limited. Trends of increasing biomass can suggest increasing nutrient load. Surface water chlorophyll-a concentration is an indicator of phytoplankton population growth, nutrient enrichment, and overall water quality.
+<div class="indicator-flex">
+<div class="indicator-text">
 
-During the `r current_year` summer index period, FIIS park-wide average surface water chlorophyll-a concentration was **`r tolower(chla_majority)` within `r get_pct(chla_df, chla_majority)`%** of the sampled estuarine area`r if (get_pct(chla_df,"Good")>0 && chla_majority!="Good") paste0(", good within ", get_pct(chla_df,"Good"), "%")``r if (get_pct(chla_df,"Fair")>0 && chla_majority!="Fair") paste0(", fair within ", get_pct(chla_df,"Fair"), "%")``r if (get_pct(chla_df,"Poor")>0) paste0(", and poor within ", get_pct(chla_df,"Poor"), "%")`, with a park-wide weighted mean concentration of **`r round(current_chla_val, 2)` \u00b5g/L**.
-`r if (!is.null(prior_data)) { prior_maj <- majority_condition(chla_prior_df); if (!is.na(prior_maj) && prior_maj != chla_majority) paste0("This marks a shift from the ", prior_year, " index period, when the majority condition was **", prior_maj, "**.") else paste0("This is consistent with the ", prior_year, " index period, when the majority condition was also **", prior_maj, "**.") }`
+Nutrient enrichment often stimulates phytoplankton production, leading to population growth. Phytoplankton growth is often nutrient-limited. Trends of increasing biomass can suggest increasing nutrient load. Surface water chlorophyll-<em>a</em> concentration is an indicator of phytoplankton population growth, nutrient enrichment, and overall water quality.
+
+```{r chla-section, results='asis'}
+if (is_multi_stratum) cat("#### Park-wide\n\n")
+prior_chla_pw <- if (!is.null(prior_data)) chla_prior_df else NULL
+cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
+           " park-wide average surface water chlorophyll-<em>a</em> concentration was ",
+           build_majority_sentence(chla_df, "of the sampled estuarine area", prior_chla_pw),
+           " The park-wide weighted mean concentration was **", round(current_chla_val, 2), " \u00b5g/L**.\n\n"))
+
+if (is_multi_stratum) {
+  for (sid in this_stratum_ids) {
+    sname <- this_stratum_names[[as.character(sid)]]
+    strat_chla_df <- pct_within_stratum(current_data, sid, "Condition_CHLA")
+    strat_chla_prior <- if (!is.null(prior_data)) pct_within_stratum(prior_data, sid, "Condition_CHLA") else NULL
+    cat(paste0("#### ", sname, "\n\n"))
+    cat(paste0("Average surface water chlorophyll-<em>a</em> concentration was ",
+               build_majority_sentence(strat_chla_df, paste0("of the ", sname, " stratum"), strat_chla_prior), "\n\n"))
+  }
+}
+```
+
+</div>
+<div class="indicator-gauge">
+
+```{r chla-gauge-composite, fig.width=5, fig.height=if (is_multi_stratum) 5.5 else 4.2}
+main_gauge_chla <- make_gauge(current_chla_val, chla_bands, 30, "\u00b5g/L", "Chlorophyll-a (Park-wide)")
+sub_gauges_chla <- list()
+if (is_multi_stratum) {
+  for (sid in this_stratum_ids) {
+    sname <- this_stratum_names[[as.character(sid)]]
+    val <- stratum_weighted_mean(current_data, sid, "Weighted_CHYA_StratInc")
+    sub_gauges_chla[[sname]] <- make_gauge(val, chla_bands, 30, "\u00b5g/L", sname)
+  }
+}
+plot_gauge_composite(main_gauge_chla, sub_gauges_chla)
+```
+
+</div>
+</div>
+
+```{r chla-bar, fig.width=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5, fig.height=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5}
+if (is_multi_stratum) {
+  plot_trend_faceted(chla_trend_strata, current_year,
+                      paste0(params$park_code, " Surface Water Chlorophyll-*a* — Historic Trend by Stratum"))
+} else {
+  plot_trend(chla_trend, current_year, paste0(params$park_code, " Surface Water Chlorophyll-*a* — Historic Trend"))
+}
+```
 
 ---
 
 ## Water Column Light Attenuation
 
+<div class="indicator-flex">
+<div class="indicator-text">
+
 Submerged aquatic vegetation (SAV) provide important ecosystem services. SAV productivity and distribution depend on light. Light attenuation through the water column is dependent on concentrations of phytoplankton, which can correlate with nutrient enrichment, and suspended inorganic and dissolved organic matter. Regardless of current SAV presence, NCBN continues to monitor this critical SAV parameter, as it provides information relevant to the overall estuarine eutrophication status.
 
-During the `r current_year` summer index period, FIIS park-wide average water column light attenuation (Kd) was **good within `r get_pct(kd_df, "Good")`%** of the sampled estuarine area, fair within `r get_pct(kd_df, "Fair")`%, and poor within `r get_pct(kd_df, "Poor")`%`r if (get_pct(kd_df,"Missing")>0) paste0(". There was missing data for ", get_pct(kd_df,"Missing"), "% of the sampled area")`, with a park-wide weighted mean Kd of **`r round(current_kd_val, 2)` m\u207b\u00b9**.
-`r if (!is.null(prior_data)) { prior_maj <- majority_condition(kd_prior_df); if (!is.na(prior_maj) && prior_maj != kd_majority) paste0("This marks a shift from the ", prior_year, " index period, when the majority condition was **", prior_maj, "**.") else paste0("This is consistent with the ", prior_year, " index period, when the majority condition was also **", prior_maj, "**.") }`
+```{r kd-section, results='asis'}
+if (is_multi_stratum) cat("#### Park-wide\n\n")
+prior_kd_pw <- if (!is.null(prior_data)) kd_prior_df else NULL
+cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
+           " park-wide average water column light attenuation (K<sub>d</sub>) was ",
+           build_majority_sentence(kd_df, "of the sampled estuarine area", prior_kd_pw),
+           " The park-wide weighted mean K<sub>d</sub> was **", round(current_kd_val, 2), " m<sup>-1</sup>**.\n\n"))
+
+if (is_multi_stratum) {
+  for (sid in this_stratum_ids) {
+    sname <- this_stratum_names[[as.character(sid)]]
+    strat_kd_df <- pct_within_stratum(current_data, sid, "Condition_Kd")
+    strat_kd_prior <- if (!is.null(prior_data)) pct_within_stratum(prior_data, sid, "Condition_Kd") else NULL
+    cat(paste0("#### ", sname, "\n\n"))
+    cat(paste0("Average water column light attenuation was ",
+               build_majority_sentence(strat_kd_df, paste0("of the ", sname, " stratum"), strat_kd_prior), "\n\n"))
+  }
+}
+```
+
+</div>
+<div class="indicator-gauge">
+
+```{r kd-gauge-composite, fig.width=5, fig.height=if (is_multi_stratum) 5.5 else 4.2}
+main_gauge_kd <- make_gauge(current_kd_val, kd_bands, 2.5, "m\u207b\u00b9", "Light Attenuation (Kd) (Park-wide)")
+sub_gauges_kd <- list()
+if (is_multi_stratum) {
+  for (sid in this_stratum_ids) {
+    sname <- this_stratum_names[[as.character(sid)]]
+    val <- stratum_weighted_mean(current_data, sid, "Weighted_Kd_StratInc")
+    sub_gauges_kd[[sname]] <- make_gauge(val, kd_bands, 2.5, "m\u207b\u00b9", sname)
+  }
+}
+plot_gauge_composite(main_gauge_kd, sub_gauges_kd)
+```
+
+</div>
+</div>
+
+```{r kd-bar, fig.width=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5, fig.height=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5}
+if (is_multi_stratum) {
+  plot_trend_faceted(kd_trend_strata, current_year,
+                      paste0(params$park_code, " Water Column Light Attenuation (K<sub>d</sub>) — Historic Trend by Stratum"))
+} else {
+  plot_trend(kd_trend, current_year, paste0(params$park_code, " Water Column Light Attenuation (K<sub>d</sub>) — Historic Trend"))
+}
+```
 
 ---
 
 ## Conclusion
 
-In `r current_year`, Fire Island National Seashore's three response indicators showed the following park-wide majority conditions: bottom water dissolved oxygen was **`r do_majority`**, surface water chlorophyll-a was **`r chla_majority`**, and water column light attenuation (Kd) was **`r kd_majority`**.
+In `r current_year`, `r params$park_name`'s three response indicators showed the following park-wide majority conditions: bottom water dissolved oxygen was **`r tolower(do_majority)`**, surface water chlorophyll-*a* was **`r tolower(chla_majority)`**, and water column light attenuation (K<sub>d</sub>) was **`r tolower(kd_majority)`**.
+
+```{r conclusion-multistratum-note, results='asis'}
+if (is_multi_stratum) {
+  cat(paste0("Conditions varied across the ", n_strata_park, " strata monitored at ", params$park_code,
+             " (", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "),
+             "); see the stratum-level summaries above for details on how each area compared to the park-wide result.\n\n"))
+}
+```
 
 ```{r conclusion-text, results='asis'}
 if (length(concern_indicators) == 0) {
   cat(paste0("All three response indicators were in good condition across the majority of the sampled estuarine area during the ",
              current_year, " index period, suggesting improved conditions relative to the nutrient over-enrichment concerns noted in prior reports."))
 } else {
-  cat(paste0("Conditions of these three status indicators at Fire Island National Seashore in ", current_year,
+  cat(paste0("Conditions of these three status indicators at ", params$park_name, " in ", current_year,
              " indicate that the estuary continues to experience estuarine nutrient over-enrichment, driven primarily by ",
              paste(concern_indicators, collapse = " and "), "."))
 }
@@ -268,7 +909,7 @@ if (length(concern_indicators) == 0) {
 ---
 
 <div style="font-size: 0.85em; color: #555;">
-**Data source:** `r params$data_file`, filtered to Park = "`r params$park_code`". Condition percentages sum the pre-weighted area-percent fields (`Percent_tot_Strat` for dissolved oxygen, `Percent_Tot` for chlorophyll-a and light attenuation) grouped by condition classification for each sampled year. Weighted mean concentrations sum the pre-weighted concentration fields (`Weighted_DO`, `Weighted_CHYA`, `Weighted_Kd`) to produce a park-wide area-weighted mean for the current index period. Report card scores are a weighted blend of sampled area condition — 100% credit for Good, 50% credit for Fair, 0% for Poor — graded on a standard A (80-100) through F (0-20) scale with +/- subdivisions. This weighting scheme is *inspired by* the partial-credit philosophy behind NOAA's National Estuarine Eutrophication Assessment (Bricker et al., 1999) and the related ASSETS (ASSessment of EStuarine Trophic Status) model, which avoid treating all non-good conditions as equally severe. It is a simplified analog, not a reproduction of NOAA's official scoring methodology — the actual NEEA/ASSETS approach incorporates additional factors such as frequency and duration of impairment, spatial coverage weighting, and separate treatment of primary versus secondary eutrophication symptoms, which are beyond the scope of this brief.
+**Data source:** `r params$data_file`, filtered to Park = "`r params$park_code`". Every sampled hexagon carries two pre-weighted area-percent fields: `Percent_Tot` (its share of the whole park's area) and `Percent_tot_Strat` (its share of its own stratum's area). Park-wide condition percentages, for all three indicators, sum `Percent_Tot` directly. Per-stratum condition percentages (shown for multi-stratum parks CACO and COLO) sum `Percent_tot_Strat` directly within that stratum. Park-wide weighted mean concentrations sum the pre-weighted concentration fields (`Weighted_DO`, `Weighted_CHYA`, `Weighted_Kd`). Per-stratum weighted mean concentrations (shown in the smaller stratum gauges) use the `_StratInc` fields (`Weighted_DO_StratInc`, etc.), which give a true standalone mean for that stratum alone, rather than that stratum's fractional contribution to the park-wide total. Report card scores are a weighted blend of sampled area condition — 100% credit for Good, 50% credit for Fair, 0% for Poor — graded on a standard A (80-100) through F (0-20) scale with +/- subdivisions. This weighting scheme is *inspired by* the partial-credit philosophy behind NOAA's National Estuarine Eutrophication Assessment (Bricker et al., 1999) and the related ASSETS (ASSessment of EStuarine Trophic Status) model, which avoid treating all non-good conditions as equally severe. It is a simplified analog, not a reproduction of NOAA's official scoring methodology — the actual NEEA/ASSETS approach incorporates additional factors such as frequency and duration of impairment, spatial coverage weighting, and separate treatment of primary versus secondary eutrophication symptoms, which are beyond the scope of this brief.
 
 **Citation notes:**
 
