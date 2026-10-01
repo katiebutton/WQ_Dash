@@ -1,6 +1,6 @@
 ---
 title: "Estuarine Nutrient Enrichment Status Report"
-subtitle: "Fire Island National Seashore"
+subtitle: "`r params$park_name`"
 author: "National Park Service — Northeast Coastal and Barrier Network (NCBN)"
 execute:
   message: false
@@ -30,7 +30,7 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-# VERSION MARKER: v20 -- if this comment isn't found in your local file, the copy did not take.
+# VERSION MARKER: v30 -- if this comment isn't found in your local file, the copy did not take.
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
 library(readxl)
 library(dplyr)
@@ -41,7 +41,7 @@ library(grid)
 library(knitr)
 library(kableExtra)
 
-condition_colors <- c("Good" = "#6b7e06", "Fair" = "#b3bb23", "Poor" = "#bb4e23", "Missing" = "#9E9E9E")
+condition_colors <- c("Good" = "#009E73", "Fair" = "#F0E442", "Poor" = "#D55E00", "Missing" = "#9E9E9E")
 condition_levels <- c("Good", "Fair", "Poor", "Missing")
 ```
 
@@ -167,13 +167,6 @@ if (is_multi_stratum) {
 current_kd_val   <- sum(current_data$Weighted_Kd,   na.rm = TRUE)
 current_do_val   <- sum(current_data$Weighted_DO,   na.rm = TRUE)
 current_chla_val <- sum(current_data$Weighted_CHYA, na.rm = TRUE)
-
-# --- Per-stratum weighted mean concentration (uses the _StratInc fields, which give a true
-# standalone mean for that stratum -- unlike Weighted_DO/CHYA/Kd, which only give that
-# stratum's fractional contribution toward the park-wide total). ---
-stratum_weighted_mean <- function(data, stratum_id, field) {
-  sum(data[data$Stratum == stratum_id, field], na.rm = TRUE)
-}
 
 # Pull a single value out of a condition table, defaulting to 0 if absent
 get_pct <- function(df, cond) {
@@ -331,39 +324,30 @@ build_majority_sentence <- function(df, area_label, prior_df = NULL) {
 ```
 
 ```{r plot-functions}
-# --- Historic trend chart: 100%-stacked horizontal bars, one per sampled year, MOST RECENT YEAR
-# AT THE TOP, current year boxed ---
+# --- Historic trend chart: 100%-stacked horizontal bars (geom_col + position_stack), one per
+# sampled year, MOST RECENT YEAR AT THE TOP. Current year is bolded (axis label) and rendered at
+# full opacity; older years are faded to 40% opacity. Current year also gets a black outline box. ---
 plot_trend <- function(trend_df, current_year, title) {
   years_sorted <- sort(unique(trend_df$Year), decreasing = TRUE)   # most recent first -> top of chart
   axis_order   <- rev(years_sorted)                                 # oldest first -> matches actual y-axis positions
   current_pos  <- which(axis_order == current_year)                 # position must be computed against axis_order, not years_sorted
 
-  # Manually compute stack positions (xmin/xmax) so bar HEIGHT can vary per row via geom_tile,
-  # which geom_col()/position_stack() can't do (geom_col only supports one fixed width per layer)
   trend_df <- trend_df %>%
     mutate(Percent    = pmin(pmax(round(Percent, 2), 0), 100),  # clamp/round to avoid float overflow past scale limits
            Condition  = factor(Condition, levels = condition_levels),
            YearFactor = factor(Year, levels = axis_order),
-           is_current = Year == current_year) %>%
-    arrange(Year, Condition) %>%          # ascending order (Good, Fair, Poor, Missing) so stack reads left-to-right matching the legend
-    group_by(Year) %>%
-    mutate(xmax = cumsum(Percent),
-           xmin = xmax - Percent,
-           x_mid = (xmin + xmax) / 2,
-           bar_height = ifelse(is_current, 0.85, 0.68)) %>%  # current year renders visibly thicker
-    ungroup()
+           is_current = Year == current_year)
 
-  # Manually build year labels (instead of relying on ggtext markdown on axis text, which has
-  # proven unreliable across ggplot2/ggtext versions for axis.text specifically). Default axis
-  # text is hidden, and a geom_text() layer draws the labels instead, since geom_text() supports
-  # a per-row `fontface` aesthetic -- giving reliable bold-vs-plain control with no markdown needed.
+  # Manually build year labels: default axis text is hidden, and a geom_text() layer draws the
+  # labels instead, since geom_text() supports a per-row `fontface` aesthetic for reliable
+  # bold-vs-plain control (ggtext markdown on axis.text proved unreliable across versions).
   label_df <- data.frame(YearFactor = factor(axis_order, levels = axis_order),
                           label = as.character(axis_order),
                           is_current = axis_order == current_year)
 
-  ggplot(trend_df, aes(y = YearFactor)) +
-    geom_tile(aes(x = x_mid, width = Percent, height = bar_height, fill = Condition, alpha = is_current),
-              color = "white", linewidth = 0.4) +
+  ggplot(trend_df, aes(x = Percent, y = YearFactor, fill = Condition)) +
+    geom_col(aes(alpha = is_current), position = position_stack(reverse = TRUE), width = 0.72,
+             color = "white", linewidth = 0.4) +
     annotate("rect", xmin = -2, xmax = 102,
              ymin = current_pos - 0.46, ymax = current_pos + 0.46,
              fill = NA, color = "#212121", linewidth = 1) +
@@ -390,28 +374,20 @@ plot_trend <- function(trend_df, current_year, title) {
     )
 }
 
-# --- Faceted historic trend chart: one panel per stratum, side by side, MOST RECENT YEAR AT THE
-# TOP in every panel, current year boxed. Used for multi-stratum parks' strata-only bar chart. ---
+# --- Faceted historic trend chart: one panel per stratum, side by side, same styling as plot_trend
+# above (bold current year label, faded older years, black outline box). Used for multi-stratum
+# parks' strata-only bar chart. ---
 plot_trend_faceted <- function(trend_df, current_year, subtitle) {
   years_sorted <- sort(unique(trend_df$Year), decreasing = TRUE)
-  axis_order   <- rev(years_sorted)                     # oldest first -> matches actual y-axis positions
-  current_pos  <- which(axis_order == current_year)      # position must be computed against axis_order, not years_sorted
+  axis_order   <- rev(years_sorted)
+  current_pos  <- which(axis_order == current_year)
 
   trend_df <- trend_df %>%
-    mutate(Percent    = pmin(pmax(round(Percent, 2), 0), 100),  # clamp/round to avoid float overflow past scale limits
+    mutate(Percent    = pmin(pmax(round(Percent, 2), 0), 100),
            Condition  = factor(Condition, levels = condition_levels),
            YearFactor = factor(Year, levels = axis_order),
-           is_current = Year == current_year) %>%
-    arrange(StratumLabel, Year, Condition) %>%   # ascending order (Good, Fair, Poor, Missing) matches legend
-    group_by(StratumLabel, Year) %>%
-    mutate(xmax = cumsum(Percent),
-           xmin = xmax - Percent,
-           x_mid = (xmin + xmax) / 2,
-           bar_height = ifelse(is_current, 0.85, 0.68)) %>%
-    ungroup()
+           is_current = Year == current_year)
 
-  # Manually build year labels (see plot_trend() for why -- avoids relying on ggtext markdown on
-  # axis text, which is unreliable). Applied per-facet-panel via geom_text().
   strata_present <- unique(trend_df$StratumLabel)
   label_df <- expand.grid(YearFactor = factor(axis_order, levels = axis_order),
                            StratumLabel = strata_present) %>%
@@ -420,64 +396,35 @@ plot_trend_faceted <- function(trend_df, current_year, subtitle) {
 
   box_df <- data.frame(StratumLabel = unique(trend_df$StratumLabel))
 
-  ggplot(trend_df, aes(y = YearFactor)) +
-    geom_tile(aes(x = x_mid, width = Percent, height = bar_height, fill = Condition, alpha = is_current),
-              color = "white", linewidth = 0.3) +
+  ggplot(trend_df, aes(x = Percent, y = YearFactor, fill = Condition)) +
+    geom_col(aes(alpha = is_current), position = position_stack(reverse = TRUE), width = 0.72,
+             color = "white", linewidth = 0.3) +
     geom_rect(data = box_df, inherit.aes = FALSE,
               aes(xmin = -2, xmax = 102, ymin = current_pos - 0.46, ymax = current_pos + 0.46),
               fill = NA, color = "#212121", linewidth = 0.9) +
     geom_text(data = label_df,
-              aes(x = -3, y = YearFactor, label = label, fontface = ifelse(is_current, "bold", "plain")),
+              aes(x = -20, y = YearFactor, label = label, fontface = ifelse(is_current, "bold", "plain")),
               hjust = 1, size = 3.2, color = "black", inherit.aes = FALSE) +
     facet_wrap(~ StratumLabel, nrow = 1) +
     scale_fill_manual(values = condition_colors, name = NULL, drop = FALSE) +
     scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.4), guide = "none") +
     scale_x_continuous(labels = function(x) paste0(x, "%"), breaks = seq(0, 100, 25),
-                        position = "top", expand = c(0, 0), limits = c(0, 100),
+                        position = "top", expand = expansion(mult = c(0, 0.03)), limits = c(0, 100),
                         oob = scales::squish) +
     coord_cartesian(clip = "off") +
     labs(title = "Percent of Estuarine Area", subtitle = subtitle, x = NULL, y = NULL) +
-    theme_minimal(base_size = 11) +
+    theme_minimal(base_size = 10) +
     theme(
       panel.grid.major.y = element_blank(),
       panel.grid.minor   = element_blank(),
       panel.grid.major.x = element_line(color = "gray85"),
       axis.text.y  = element_blank(),
       axis.ticks.y = element_blank(),
-      strip.text   = element_text(face = "bold", size = 10),
+      strip.text   = element_text(face = "bold", size = 9),
       legend.position = "bottom",
-      plot.title = ggtext::element_markdown(hjust = 0.5, face = "bold", size = 13),
-      plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray30"),
-      plot.margin = margin(t = 5.5, r = 5.5, b = 5.5, l = 30)
-    )
-}
-
-# --- Pie chart: park-wide condition breakdown for one indicator, one year (currently unused,
-# kept available in case a pie chart is wanted again later) ---
-plot_pie <- function(df, title) {
-  pie_df <- df %>%
-    filter(Condition %in% condition_levels, Percent > 0) %>%
-    mutate(Condition = factor(Condition, levels = condition_levels)) %>%
-    arrange(Condition) %>%
-    mutate(
-      ymax = cumsum(Percent),
-      ymin = c(0, head(ymax, -1)),
-      label_pos = (ymax + ymin) / 2,
-      label = paste0(round(Percent, 1), "%")
-    )
-
-  ggplot(pie_df) +
-    geom_rect(aes(xmin = 0, xmax = 1, ymin = ymin, ymax = ymax, fill = Condition)) +
-    geom_text(aes(x = 0.5, y = label_pos, label = label), color = "white",
-              fontface = "bold", size = 3.8) +
-    coord_polar(theta = "y") +
-    xlim(0, 1) +
-    scale_fill_manual(values = condition_colors, name = NULL, drop = FALSE) +
-    labs(title = title) +
-    theme_void(base_size = 12) +
-    theme(
-      legend.position = "bottom",
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 13)
+      plot.title = ggtext::element_markdown(hjust = 0.5, face = "bold", size = 12, margin = margin(b = 6)),
+      plot.subtitle = element_text(hjust = 0.5, size = 9, color = "gray30"),
+      plot.margin = margin(t = 10, r = 14, b = 5.5, l = 70)
     )
 }
 
@@ -530,30 +477,6 @@ make_gauge <- function(value, bands, max_value, unit, title) {
     annotate("text", x = 0, y = 1.34, label = title, size = 4.5, fontface = "bold") +
     coord_fixed(xlim = c(-1.35, 1.35), ylim = c(-0.5, 1.5)) +
     theme_void()
-}
-
-# --- Composite gauge figure: one large park-wide gauge, plus optional smaller stratum gauges
-# arranged in a row underneath. If no sub-gauges are supplied, just prints the main gauge alone. ---
-plot_gauge_composite <- function(main_gauge, sub_gauges = list()) {
-  if (length(sub_gauges) == 0) {
-    print(main_gauge)
-    return(invisible(NULL))
-  }
-  n_sub <- length(sub_gauges)
-  grid.newpage()
-  layout <- grid.layout(nrow = 2, ncol = n_sub, heights = unit(c(2, 1), "null"))
-  pushViewport(viewport(layout = layout))
-
-  pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1:n_sub))
-  print(main_gauge, newpage = FALSE)
-  popViewport()
-
-  for (i in seq_len(n_sub)) {
-    pushViewport(viewport(layout.pos.row = 2, layout.pos.col = i))
-    print(sub_gauges[[i]], newpage = FALSE)
-    popViewport()
-  }
-  popViewport()
 }
 
 # Threshold bands per indicator (from, to, in left-to-right dial order)
@@ -615,22 +538,28 @@ body, p {
   text-align: center;
   margin-top: 6px;
 }
-.indicator-flex {
+.indicator-figures {
   display: flex;
   gap: 24px;
-  align-items: stretch;
-  margin-top: 12px;
+  align-items: flex-end;
+  margin-top: 16px;
   margin-bottom: 8px;
 }
-.indicator-text {
-  flex: 3;
-}
-.indicator-gauge {
-  flex: 2;
+.indicator-gauge-col {
+  flex: 1;
   min-width: 260px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  padding-top: 40px;
+}
+.indicator-bar-col {
+  flex: 1;
+  min-width: 260px;
+}
+.fig-caption {
+  font-size: 0.85em;
+  color: #555555;
+  text-align: center;
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 </style>
 
@@ -674,9 +603,9 @@ kable(scorecard_display,
 </div>
 <div class="site-context-map">
 <div class="map-placeholder">[ Map of `r params$park_name` estuarine monitoring area ]</div>
-<div class="map-caption">Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nutrient enrichment.</div>
 </div>
 </div>
+<p class="fig-caption">Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nutrient enrichment.</p>
 
 The threat of nutrient enrichment is a primary management concern. Water quality monitoring follows Northeast Coastal and Barrier Network's *Protocol for Monitoring Estuarine Nutrient Enrichment* (Kopp and Neckles, 2009). The protocol's primary goal is to assess how estuarine natural resources are affected by changing nutrient inputs by determining the status and trends of response indicators within the monitored estuarine areas of each park.
 
@@ -707,17 +636,14 @@ thresholds_df <- data.frame(
 
 kable(thresholds_df, format = "html", caption = "Table 1: Threshold values associated with each measured nutrient enrichment condition category.", align = "lccc", escape = FALSE) %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered")) %>%
-  column_spec(2, background = "#E8F5E9") %>%
-  column_spec(3, background = "#FFFDE7") %>%
-  column_spec(4, background = "#FFEBEE")
+  column_spec(2, background = "#E6F7F1") %>%
+  column_spec(3, background = "#FDFBE0") %>%
+  column_spec(4, background = "#FBE5DC")
 ```
 
 ---
 
 ## Bottom Water Dissolved Oxygen
-
-<div class="indicator-flex">
-<div class="indicator-text">
 
 Bottom water DO concentration is an indirect indicator of nutrient load and direct indicator of estuarine water chemistry and organism health. Oxygen is consumed when microbial decomposers mineralize organic matter on and within estuarine sediments. When sediment organic matter increases due to nutrient over-enrichment, it can cause an overgrowth of nuisance algae. The resulting heightened microbial decomposition can lower DO concentrations in bottom waters. It can also lead to increased extent and duration of bottom water anoxia and toxic sulfide concentrations. Nutrient enrichment can, ultimately, impact fauna diversity and abundance and shift species dominance.
 
@@ -739,26 +665,18 @@ if (is_multi_stratum) {
 }
 ```
 
-</div>
-<div class="indicator-gauge">
+<div class="indicator-figures">
+<div class="indicator-gauge-col">
 
-```{r do-gauge-composite, fig.width=5, fig.height=if (is_multi_stratum) 5.5 else 4.2}
-main_gauge_do <- make_gauge(current_do_val, do_bands, 12, "mg/L", "Dissolved Oxygen (Park-wide)")
-sub_gauges_do <- list()
-if (is_multi_stratum) {
-  for (sid in this_stratum_ids) {
-    sname <- this_stratum_names[[as.character(sid)]]
-    val <- stratum_weighted_mean(current_data, sid, "Weighted_DO_StratInc")
-    sub_gauges_do[[sname]] <- make_gauge(val, do_bands, 12, "mg/L", sname)
-  }
-}
-plot_gauge_composite(main_gauge_do, sub_gauges_do)
+```{r do-gauge, fig.width=5, fig.height=5}
+make_gauge(current_do_val, do_bands, 12, "mg/L", "Dissolved Oxygen (Park-wide)")
 ```
 
+<p class="fig-caption">Fig. 2: Park-wide area-weighted mean bottom water dissolved oxygen concentration at `r params$park_name`, `r current_year` index period.</p>
 </div>
-</div>
+<div class="indicator-bar-col">
 
-```{r do-bar, fig.width=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5, fig.height=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5}
+```{r do-bar, fig.width=5, fig.height=5}
 if (is_multi_stratum) {
   plot_trend_faceted(do_trend_strata, current_year,
                       paste0(params$park_code, " Bottom Water Dissolved Oxygen — Historic Trend by Stratum"))
@@ -767,12 +685,13 @@ if (is_multi_stratum) {
 }
 ```
 
+<p class="fig-caption">Fig. 3: Bottom water dissolved oxygen concentration (mg/L) condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.</p>
+</div>
+</div>
+
 ---
 
 ## Surface Water Chlorophyll-*a*
-
-<div class="indicator-flex">
-<div class="indicator-text">
 
 Nutrient enrichment often stimulates phytoplankton production, leading to population growth. Phytoplankton growth is often nutrient-limited. Trends of increasing biomass can suggest increasing nutrient load. Surface water chlorophyll-<em>a</em> concentration is an indicator of phytoplankton population growth, nutrient enrichment, and overall water quality.
 
@@ -796,26 +715,18 @@ if (is_multi_stratum) {
 }
 ```
 
-</div>
-<div class="indicator-gauge">
+<div class="indicator-figures">
+<div class="indicator-gauge-col">
 
-```{r chla-gauge-composite, fig.width=5, fig.height=if (is_multi_stratum) 5.5 else 4.2}
-main_gauge_chla <- make_gauge(current_chla_val, chla_bands, 30, "\u00b5g/L", "Chlorophyll-a (Park-wide)")
-sub_gauges_chla <- list()
-if (is_multi_stratum) {
-  for (sid in this_stratum_ids) {
-    sname <- this_stratum_names[[as.character(sid)]]
-    val <- stratum_weighted_mean(current_data, sid, "Weighted_CHYA_StratInc")
-    sub_gauges_chla[[sname]] <- make_gauge(val, chla_bands, 30, "\u00b5g/L", sname)
-  }
-}
-plot_gauge_composite(main_gauge_chla, sub_gauges_chla)
+```{r chla-gauge, fig.width=5, fig.height=5}
+make_gauge(current_chla_val, chla_bands, 30, "\u00b5g/L", "Chlorophyll-a (Park-wide)")
 ```
 
+<p class="fig-caption">Fig. 4: Park-wide area-weighted mean surface water chlorophyll-a concentration at `r params$park_name`, `r current_year` index period.</p>
 </div>
-</div>
+<div class="indicator-bar-col">
 
-```{r chla-bar, fig.width=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5, fig.height=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5}
+```{r chla-bar, fig.width=5, fig.height=5}
 if (is_multi_stratum) {
   plot_trend_faceted(chla_trend_strata, current_year,
                       paste0(params$park_code, " Surface Water Chlorophyll-*a* — Historic Trend by Stratum"))
@@ -824,12 +735,13 @@ if (is_multi_stratum) {
 }
 ```
 
+<p class="fig-caption">Fig. 5: Surface water chlorophyll-a concentration (µg/L) condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.</p>
+</div>
+</div>
+
 ---
 
 ## Water Column Light Attenuation
-
-<div class="indicator-flex">
-<div class="indicator-text">
 
 Submerged aquatic vegetation (SAV) provide important ecosystem services. SAV productivity and distribution depend on light. Light attenuation through the water column is dependent on concentrations of phytoplankton, which can correlate with nutrient enrichment, and suspended inorganic and dissolved organic matter. Regardless of current SAV presence, NCBN continues to monitor this critical SAV parameter, as it provides information relevant to the overall estuarine eutrophication status.
 
@@ -853,26 +765,18 @@ if (is_multi_stratum) {
 }
 ```
 
-</div>
-<div class="indicator-gauge">
+<div class="indicator-figures">
+<div class="indicator-gauge-col">
 
-```{r kd-gauge-composite, fig.width=5, fig.height=if (is_multi_stratum) 5.5 else 4.2}
-main_gauge_kd <- make_gauge(current_kd_val, kd_bands, 2.5, "m\u207b\u00b9", "Light Attenuation (Kd) (Park-wide)")
-sub_gauges_kd <- list()
-if (is_multi_stratum) {
-  for (sid in this_stratum_ids) {
-    sname <- this_stratum_names[[as.character(sid)]]
-    val <- stratum_weighted_mean(current_data, sid, "Weighted_Kd_StratInc")
-    sub_gauges_kd[[sname]] <- make_gauge(val, kd_bands, 2.5, "m\u207b\u00b9", sname)
-  }
-}
-plot_gauge_composite(main_gauge_kd, sub_gauges_kd)
+```{r kd-gauge, fig.width=5, fig.height=5}
+make_gauge(current_kd_val, kd_bands, 2.5, "m\u207b\u00b9", "Light Attenuation (Kd) (Park-wide)")
 ```
 
+<p class="fig-caption">Fig. 6: Park-wide area-weighted mean water column light attenuation coefficient (K<sub>d</sub>) at `r params$park_name`, `r current_year` index period.</p>
 </div>
-</div>
+<div class="indicator-bar-col">
 
-```{r kd-bar, fig.width=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5, fig.height=if (is_multi_stratum) max(6, 2.5 * n_strata_park) else 5}
+```{r kd-bar, fig.width=5, fig.height=5}
 if (is_multi_stratum) {
   plot_trend_faceted(kd_trend_strata, current_year,
                       paste0(params$park_code, " Water Column Light Attenuation (K<sub>d</sub>) — Historic Trend by Stratum"))
@@ -880,6 +784,10 @@ if (is_multi_stratum) {
   plot_trend(kd_trend, current_year, paste0(params$park_code, " Water Column Light Attenuation (K<sub>d</sub>) — Historic Trend"))
 }
 ```
+
+<p class="fig-caption">Fig. 7: Water column light attenuation, represented by coefficient K<sub>d</sub> (m<sup>-1</sup>), condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.</p>
+</div>
+</div>
 
 ---
 
@@ -909,7 +817,7 @@ if (length(concern_indicators) == 0) {
 ---
 
 <div style="font-size: 0.85em; color: #555;">
-**Data source:** `r params$data_file`, filtered to Park = "`r params$park_code`". Every sampled hexagon carries two pre-weighted area-percent fields: `Percent_Tot` (its share of the whole park's area) and `Percent_tot_Strat` (its share of its own stratum's area). Park-wide condition percentages, for all three indicators, sum `Percent_Tot` directly. Per-stratum condition percentages (shown for multi-stratum parks CACO and COLO) sum `Percent_tot_Strat` directly within that stratum. Park-wide weighted mean concentrations sum the pre-weighted concentration fields (`Weighted_DO`, `Weighted_CHYA`, `Weighted_Kd`). Per-stratum weighted mean concentrations (shown in the smaller stratum gauges) use the `_StratInc` fields (`Weighted_DO_StratInc`, etc.), which give a true standalone mean for that stratum alone, rather than that stratum's fractional contribution to the park-wide total. Report card scores are a weighted blend of sampled area condition — 100% credit for Good, 50% credit for Fair, 0% for Poor — graded on a standard A (80-100) through F (0-20) scale with +/- subdivisions. This weighting scheme is *inspired by* the partial-credit philosophy behind NOAA's National Estuarine Eutrophication Assessment (Bricker et al., 1999) and the related ASSETS (ASSessment of EStuarine Trophic Status) model, which avoid treating all non-good conditions as equally severe. It is a simplified analog, not a reproduction of NOAA's official scoring methodology — the actual NEEA/ASSETS approach incorporates additional factors such as frequency and duration of impairment, spatial coverage weighting, and separate treatment of primary versus secondary eutrophication symptoms, which are beyond the scope of this brief.
+**Data source:** `r params$data_file`, filtered to Park = "`r params$park_code`". Every sampled hexagon carries two pre-weighted area-percent fields: `Percent_Tot` (its share of the whole park's area) and `Percent_tot_Strat` (its share of its own stratum's area). Park-wide condition percentages, for all three indicators, sum `Percent_Tot` directly. Per-stratum condition percentages (shown for multi-stratum parks CACO and COLO) sum `Percent_tot_Strat` directly within that stratum. Park-wide weighted mean concentrations sum the pre-weighted concentration fields (`Weighted_DO`, `Weighted_CHYA`, `Weighted_Kd`). Report card scores are a weighted blend of sampled area condition — 100% credit for Good, 50% credit for Fair, 0% for Poor — graded on a standard A (80-100) through F (0-20) scale with +/- subdivisions. This weighting scheme is *inspired by* the partial-credit philosophy behind NOAA's National Estuarine Eutrophication Assessment (Bricker et al., 1999) and the related ASSETS (ASSessment of EStuarine Trophic Status) model, which avoid treating all non-good conditions as equally severe. It is a simplified analog, not a reproduction of NOAA's official scoring methodology — the actual NEEA/ASSETS approach incorporates additional factors such as frequency and duration of impairment, spatial coverage weighting, and separate treatment of primary versus secondary eutrophication symptoms, which are beyond the scope of this brief.
 
 **Citation notes:**
 
