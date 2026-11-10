@@ -26,8 +26,8 @@ output:
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 params:
   data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
-  park_code: "CACO"
-  park_name: "Cape Cod National Seashore"
+  park_code: "FIIS"
+  park_name: "Fire Island National Seashore"
   sample_year: "2025"
 ---
 
