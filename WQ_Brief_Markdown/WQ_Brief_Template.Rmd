@@ -1,5 +1,5 @@
 ---
-title: "Estuarine Nutrient Enrichment Status Report"
+title: "`r params$sample_year` Estuarine Nutrient Enrichment Status Report"
 subtitle: "`r params$park_name`"
 author: "National Park Service — Northeast Coastal and Barrier Network (NCBN)"
 knit: !expr function(input_file, encoding) { params_env <- rmarkdown::yaml_front_matter(input_file)$params; park_code <- params_env$park_code; sample_year <- params_env$sample_year; resolved_year <- if (identical(sample_year, "latest")) { raw <- readxl::read_excel(params_env$data_file, sheet = "Sheet 1"); max(raw$Sample_Year[raw$Park == park_code], na.rm = TRUE) } else { sample_year }; out_name <- paste0(park_code, "_", resolved_year, "_WQ_Report.html"); rmarkdown::render(input = input_file, encoding = encoding, output_file = out_name) }
@@ -26,9 +26,9 @@ output:
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 params:
   data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
-  park_code: "GATE"
-  park_name: "Gateway National Recreation Area"
-  sample_year: "latest"
+  park_code: "CACO"
+  park_name: "Cape Cod National Seashore"
+  sample_year: "2025"
 ---
 
 ```{r setup, include=FALSE}
@@ -179,13 +179,56 @@ concern_indicators <- c(
 
 # Park-specific Site Context paragraphs, keyed by park_code.
 site_context_text <- list(
-  FIIS = "Fire Island National Seashore (FIIS) is a 7,810 ha park on the South Shore of Long Island, New York. Approximately 46% of this area is submerged estuarine land in Great South Bay and Moriches Bay. Although FIIS owns only a minority portion of the submerged land in these bays, the area in park ownership is, nonetheless, extensive.",
-  CACO = "Cape Cod is a large glacial moraine peninsula that extends 96.5 km into the Atlantic Ocean from the coast of Massachusetts. Cape Cod National Seashore (CACO) is located on the outer portion of Cape Cod. Almost all the estuarine habitat at CACO is associated with two large coastal lagoon systems, Pleasant Bay (PB) and Nauset Harbor/Marsh (NH). Due to restricted flushing with the ocean and residential development pressures outside the seashore boundary, the National Park Service (NPS) interest in estuarine condition extends throughout these coastal embayments, not just in the areas within the seashore boundary. Pleasant Bay and Nauset Harbor are each fringed by small, deep, glacially-formed kettle-hole salt ponds that flush with seawater from the lagoons. Because deep water replacement may be restricted through density stratification, and the presence of shallow sills at their mouths, these estuarine kettle-holes are particularly susceptible to over-enrichment.",
-  GATE = "Gateway National Recreation Area (GATE) consists of 10,783 hectares of coastal uplands, freshwater ponds, marshes, bays, beaches, and mudflats. Established in 1972, it is divided into three geographically separate units: Jamaica Bay, Staten Island, and Sandy Hook. The Jamaica Bay Unit encompasses almost all of island uplands and wetlands within Jamaica Bay. Thus, estuarine resources of GATE are fully contained within Jamaica Bay. The target population for estuarine monitoring includes 100% of these resources, approximately 4,615 ha, plus an additional 1,257 ha within Jamaica Bay but outside the park boundary.",
-  COLO = "Colonial National Historical Park (COLO) consists of two significant land holdings, the Yorktown and Jamestown Units. These are connected by a narrow traffic corridor, the Colonial Parkway. COLO estuarine sampling area is divided into two strata. The first, a tidal creek stratum, includes all estuarine resources falling inside park boundaries. This includes small tidal creeks that drain off park wetlands, the small regions of park ownership where the Colonial Parkway overpasses tidal creeks, and a few additional areas where the park boundary does not precisely coincide with a tidal creek shoreline. The second, Jamestown Island/Thoroughfare stratum, includes non-NPS estuarine resources in Sandy Bay, Back River and The Thorofare. The sample area is defined to exclude the non-NPS estuarine resources associated with the James River or York River. These are major systems outside COLO boundaries and attempting to monitor them in any meaningful fashion would severely dilute NPS efforts within the park and at Jamestown. Between both strata, approximately 293 ha of estuary are monitored, including 100% of the estuarine resources that fall within the park boundary.",
-  GEWA = "George Washington Birthplace National Monument (GEWA) is located along the tidal reaches of the Potomac River in Westmoreland County, Virginia. The Potomac shoreline delineates the northern boundary of the monument, where three small sub-basins drain into the Potomac. The largest and most significant estuarine resource is Popes Creek, which has restricted flushing with the Potomac and is closely linked to GEWA resources. The monitoring area covers all tidal portions of Popes Creek, which includes approximately 137.7 ha of estuary outside and 4.7 ha inside the park.",
-  ASIS = "Assateague Island National Seashore (ASIS) is a 60km long barrier island off the eastern coast of the Delmarva Peninsula, extending into the Atlantic Ocean. The northern two-thirds of the island is in Maryland, while the southern third is in Virginia. ASIS one of two NER coastal parks with a highly developed water-quality monitoring program, through a joint effort among many federal and state partners. The park boundary encircles the NPS holdings, the U.S. Fish and Wildlife Service's Chincoteague National Wildlife Refuge, and Maryland's Assateague State Park. Further, Sinepuxent Bay and the MD portion of Chincoteague Bay are managed under the Maryland Coastal Bays Program as a National Estuary Program estuary. Consequently, the park has monitoring interests throughout the coastal bay, and is not confined in its interests to the area within the park boundary. Approximately 37,319 ha of estuary is monitored for this protocol. About 6,867 ha of that area falls inside park boundaries, representing 100% of NPS estuarine resources within ASIS."
+  FIIS = "Fire Island National Seashore (FIIS) is a 19,580-acre park unit on the South Shore of Long Island, New York (Fig. 1). Approximately 46% of this area is submerged estuarine land in Great South Bay and Moriches Bay. Although FIIS owns only a minority portion of the submerged estuarine land in these bays, the area in park ownership is extensive.",
+  CACO = "Cape Cod is a large glacial moraine peninsula that extends 96.5 km into the Atlantic Ocean from the coast of Massachusetts. Cape Cod National Seashore (CACO) is located on the outer portion of Cape Cod (Fig. 1). Almost all the estuarine habitat at CACO is associated with two large coastal lagoon systems, Pleasant Bay (PB) and Nauset Harbor/Marsh (NH). Due to restricted flushing with the ocean and residential development pressures outside the seashore boundary, the National Park Service (NPS) interest in estuarine condition extends throughout these coastal embayments, not just in the areas within the seashore boundary. Pleasant Bay and Nauset Harbor are each fringed by small, deep, glacially-formed kettle-hole salt ponds that flush with seawater from the lagoons. Because deep water replacement may be restricted through density stratification, and the presence of shallow sills at their mouths, these estuarine kettle-holes are particularly susceptible to over-enrichment.",
+  GATE = "Gateway National Recreation Area (GATE) consists of 26,645 acres of coastal uplands, freshwater ponds, marshes, bays, beaches, and mudflats. Established in 1972, it is divided into three geographically separate units: Jamaica Bay, Staten Island, and Sandy Hook. The Jamaica Bay Unit (GATE-JBU) encompasses almost all of the island uplands and wetlands within Jamaica Bay (Fig. 1). Thus, estuarine resources of GATE are fully contained within Jamaica Bay. The target population for estuarine monitoring includes 100% of these resources, approximately 11,404 acres, plus an additional 3,106 acres within Jamaica Bay but outside the park boundary.",
+  COLO = "Colonial National Historical Park (COLO) consists of two significant land holdings, the Yorktown and Jamestown Units (Fig. 1). These are connected by a narrow traffic corridor, the Colonial Parkway. COLO estuarine sampling area is divided into two strata. The first, the Tidal Creeks stratum, includes all estuarine resources falling inside park boundaries. This includes small tidal creeks that drain off park wetlands, the small regions of park ownership where the Colonial Parkway overpasses tidal creeks, and a few additional areas where the park boundary does not precisely coincide with a tidal creek shoreline. The second, Jamestown Island/Thoroughfare stratum, includes non-NPS estuarine resources in Sandy Bay, Back River and The Thoroughfare. The sample area is defined to exclude the non-NPS estuarine resources associated with the James River or York River. These are major systems outside COLO boundaries and attempting to monitor them in any meaningful fashion would severely dilute NPS efforts within the park and at Jamestown. Between both strata, approximately 724 acres of estuary are monitored, including 100% of the estuarine resources that fall within the park boundary.",
+  GEWA = "George Washington Birthplace National Monument (GEWA) is located along the tidal reaches of the Potomac River in Westmoreland County, Virginia (Fig. 1). The Potomac shoreline delineates the northern boundary of the monument, where three small sub-basins drain into the Potomac. The largest and most significant estuarine resource is Popes Creek, which has restricted flushing with the Potomac and is closely linked to GEWA resources. The monitoring area covers all tidal portions of Popes Creek, which includes approximately 340 acres of estuary outside and 12 acres inside the park.",
+  ASIS = "Assateague Island National Seashore (ASIS) is a 60km long barrier island off the eastern coast of the Delmarva Peninsula, extending into the Atlantic Ocean (Fig. 1). The northern two-thirds of the island are in Maryland, while the southern third is in Virginia. ASIS is one of two NER coastal parks with a highly developed water-quality monitoring program, through a joint effort among many federal and state partners. The park boundary encircles the NPS holdings, Chincoteague National Wildlife Refuge (U.S. Fish and Wildlife Service), and Assateague State Park (State, MD). Further, Sinepuxent Bay and the MD portion of Chincoteague Bay are managed under the Maryland Coastal Bays Program as a National Estuary Program estuary. Therefore, the park has monitoring interests throughout the coastal bay and is not confined in its interests to the area within the park boundary. Approximately 92,217 acres of estuary are monitored for this protocol. About 16,969 acres of that area fall inside park boundaries, representing 100% of NPS estuarine resources within ASIS."
 )
+
+# Park-specific Sampling Design paragraphs, keyed by park code.
+sampling_design_text <- list(
+  FIIS = "Water quality is assessed at approximately 30 stations distributed throughout the estuary using a randomized, spatially balanced design, maximizing the likelihood that results are representative of the entire system. This total includes 6 fixed trend stations, visited repeatedly over time to track long-term change. While trend stations were sampled multiple times across each four-week index period, only one representative sampling event per trend station is included in the system-wide figures presented here, consistent with treatment of the 24 random spatial stations.
+  
+Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at FIIS biennially since 2003.
+
+Because each sampling location statistically represents a proportional share of the surrounding estuary, results can be scaled up to describe conditions across the full monitored area. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the estuary's surface area represented by stations falling into good, fair, or poor condition.",
+  CACO = "Water quality is assessed at approximately 42 stations across the three monitored strata: Pleasant Bay and Nauset Harbor, where a randomized, spatially balanced design was used, and Salt Ponds, where each individual pond served as its own sampling station. Within Pleasant Bay and Nauset Harbor, 6 fixed trend stations are visited repeatedly over time to track long-term change, alongside the remaining randomly selected spatial stations. The Salt Ponds stratum does not include trend stations. While trend stations were sampled multiple times across each four-week index period, only one representative sampling event per trend station is included in the figures presented here, consistent with treatment of the spatial stations.
+  
+Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at CACO biennially since 2007.
+
+Because each sampling location statistically represents a proportional share of its surrounding stratum, results can be scaled up to describe conditions across the full monitored area, both system-wide and within each stratum individually. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the stratum's (or system's) surface area represented by stations falling into good, fair, or poor condition.",
+  GATE = "Water quality is assessed at approximately 30 stations distributed throughout the estuary using a randomized, spatially balanced design, maximizing the likelihood that results are representative of the entire system. This total includes 6 fixed trend stations, visited repeatedly over time to track long-term change. While trend stations were sampled multiple times across each four-week index period, only one representative sampling event per trend station is included in the system-wide figures presented here, consistent with treatment of the 24 random spatial stations.
+  
+Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at GATE biennially since 2003.
+
+Because each sampling location statistically represents a proportional share of the surrounding estuary, results can be scaled up to describe conditions across the full monitored area. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the estuary's surface area represented by stations falling into good, fair, or poor condition.",
+  COLO = "Water quality was assessed at approximately 43 stations across the two monitored strata: the Thoroughfare, where a randomized, spatially balanced design was used, and Tidal Creeks, where narrow, discrete waterways were sampled at representative fixed points. Both approaches maximize the likelihood that results are representative of their respective strata. Within the Thoroughfare stratum, 6 fixed trend stations are visited repeatedly over time to track long-term change, alongside the remaining randomly selected spatial stations. The Tidal Creek stratum includes 3 fixed trend stations among its sampling locations. While trend stations were sampled multiple times across each four-week index period, only one representative sampling event per trend station is included in the figures presented here, consistent with treatment of the spatial stations. 
+  
+Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at COLO biennially since 2008.
+
+Because each sampling location statistically represents a proportional share of its surrounding stratum, results can be scaled up to describe conditions across the full monitored area, both system-wide and within each stratum individually. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the stratum's (or system's) surface area represented by stations falling into good, fair, or poor condition.
+
+<em>Note: The 2025 sampling schedule was disrupted due to programmatic and staffing changes, and sampling instead occurred in 2026. 2023 is the most recent sampling data that is available at this time.
+
+Additionally, the mean yearly values for 2008 may differ from the published trend reports because the trend report includes the addition of a fixed trend station in the overall park wide monitoring area. The trend station area does not contribute to the overall area computed in the analysis for the following years and matches other reporting products. Also, the trend report stratum identifiers are reversed from this report and other data products.</em>
+",
+  GEWA = "Water quality is assessed at approximately 30 stations distributed throughout the estuary using a randomized, spatially balanced design, maximizing the likelihood that results are representative of the entire system. This total includes 6 fixed trend stations, visited repeatedly over time to track long-term change. While trend stations were sampled multiple times across each four-week index period, only one representative sampling event per trend station is included in the system-wide figures presented here, consistent with treatment of the 24 random spatial stations.
+  
+Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at GEWA biennially since 2009.
+
+Because each sampling location statistically represents a proportional share of the surrounding estuary, results can be scaled up to describe conditions across the full monitored area. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the estuary's surface area represented by stations falling into good, fair, or poor condition.
+
+<em>Note: Monitoring at GEWA is currently suspended. Sampling was last conducted in 2021, and water quality monitoring has been paused as part of a network-wide program review, pending reassessment of spatial sampling design and field logistics at this site.</em>",
+  ASIS = "Water quality is assessed at approximately 30 stations distributed throughout the estuary using a randomized, spatially balanced design, maximizing the likelihood that results are representative of the entire system. This total includes 6 fixed trend stations, visited repeatedly over time to track long-term change. While trend stations were sampled multiple times across each four-week index period, only one representative sampling event per trend station is included in the system-wide figures presented here, consistent with treatment of the 24 random spatial stations.
+  
+Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at ASIS biennially since 2005.
+
+Because each sampling location statistically represents a proportional share of the surrounding estuary, results can be scaled up to describe conditions across the full monitored area. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the estuary's surface area represented by stations falling into good, fair, or poor condition."
+)
+
+
 
 # Site map image filenames, keyed by park_code. Files live in Assets/ as [PARK CODE]_MAP.png
 site_map_files <- setNames(
@@ -205,64 +248,64 @@ site_map_files <- setNames(
 # entry for park-wide commentary.
 
 do_commentary <- list(
-  FIIS = list(park_wide = "2025 conditions were consistent with all previous index periods, where an overwhelming majority of the estuarine area was in good condition."
+  FIIS = list(park_wide = "2025 conditions were consistent with previous index periods, when an overwhelming majority of the estuarine area was in good condition."
   ),
   CACO = list(
     park_wide     = NULL,
     `Pleasant Bay` = "2025 conditions displayed an increase in area in fair condition. Otherwise, this year's observations were consistent with previous index periods, except for 2007-2009 and 2011, when a slightly larger portion of the estuary fell within the fair threshold.",
-    `Nauset Harbor` = "2025 conditions were consistent with previous index periods when most of the estuary had good bottom water dissolved oxygen concentration, however, 2025 conditions broke the four-year pattern of some portion of the sampled estuary being in poor condition.",
+    `Nauset Harbor` = "2025 conditions were consistent with previous index periods when most of the estuary was in good condition, however, 2025 conditions broke the four-year pattern of some portion of the sampled estuary being in poor condition.",
     `Salt Ponds`   = "2025 conditions were consistent with previous index periods, with a slight increase in area in poor condition."
   ),
-  GATE = list(park_wide = "2024 conditions were consistent with previous index periods where there has been a majority of the area in good condition, except for 2006, when there was no majority due to missing data. All years except for 2003, 2005, 2014, and now 2024, have shown some percentage in poor condition."
+  GATE = list(park_wide = "2024 conditions were consistent with previous index periods when there has been a majority of the area in good condition, except for 2006, when there was no majority due to missing data. All years except for 2003, 2005, 2014, and now 2024, have shown some percentage in poor condition."
   ),
   COLO = list(park_wide = NULL, 
-    `Thoroughfare` =  "2023 conditions were consistent with previous index periods, when a large majority of the estuarine area has been in good condition, though 2024 observations displayed some proportion in fair condition. The sampled area was entirely in good condition in 2012, 2014, 2016, 2020, and 2022." , 
-    `Tidal Creeks` = "2023 conditions were consistent with previous index periods, when a large majority of the estuarine area has been in good condition and some proportion in fair condition, except in 2014 and 2016, when there was no area in fair condition."
+    `Thoroughfare` =  "2023 conditions were consistent with previous index periods, when a large majority of the estuarine area has been in good condition, though 2023 observations displayed some proportion in fair condition. The sampled area was entirely in good condition in 2012, 2014, 2016, 2020, and 2022." , 
+    `Tidal Creeks` = "2023 conditions were consistent with previous index periods, when a large majority of the estuarine area has been in good condition and some proportion in fair condition, except in 2014 and 2016, when there was no sampled area in fair condition."
     ),
-  GEWA = list(park_wide = "2021 conditions were consistent with the previous index periods, where there has been a significant majority of the sampled estuarine area in good condition, except for in 2011. 2021 marks the third period in which the majority of the sampled area was over 95% good."
+  GEWA = list(park_wide = "2021 conditions were consistent with the previous index periods, when there has been a significant majority of the sampled estuarine area in good condition, except for in 2011. 2021 marks the third index period in which the majority of the sampled area was over 95% good."
   ),
-  ASIS = list(park_wide = "2024 conditions were consistent with all previous index periods. Since the study began, dissolved oxygen has been observed as being in good condition in a majority of sampled area at Assateague."
+  ASIS = list(park_wide = "2024 conditions were consistent with previous index periods. Since the study began, bottom water dissolved oxygen has been observed as being in good condition in a majority of sampled area at Assateague."
   )
 )
 
 chla_commentary <- list(
-  FIIS = list(park_wide = "2025 conditions were consistent with the previous sample year, besides a decrease in area in poor condition. Since 2009, the majority of the estuarine area had poor or fair chlorophyll-a condition except for 2019-2021."
+  FIIS = list(park_wide = "2025 conditions were consistent with the previous sample year, besides a decrease in area in poor condition. Since 2009, the majority of the estuarine area was in poor or fair condition except for 2019-2021."
   ),
   CACO = list(
     park_wide     = NULL,
-    `Pleasant Bay` = "2025 conditions were consistent with previous index periods, with a majority of the area in good condition for surface water chlorophyll-<em>a</em>, a fluctuating small percentage in fair condition, and no area in poor condition other than in 2011, 2012, and 2016. There has been missing data for some portion of the sampled area in 2008, 2009, 2010, and 2025.",
+    `Pleasant Bay` = "2025 conditions were consistent with previous index periods, with a majority of the area in good condition, a fluctuating small percentage in fair condition, and no area in poor condition other than in 2011, 2012, and 2016. There has been missing data for some portion of the sampled area in 2008, 2009, 2010, and 2025.",
     `Nauset Harbor` = "The 2025 index period marked the first time in which surface water chlorophyll-<em>a</em> conditions were good in the entire sampled area of the estuary.",
-    `Salt Ponds`   = "The 2025 index period marked the second index period since the study began in which surface water chlorophyll-<em>a</em> conditions were good in most of the SP stratum."
+    `Salt Ponds`   = "The 2025 index period marked the second index period since the study began in which surface water chlorophyll-<em>a</em> conditions were good in most of the Salt Ponds stratum."
   ),
-  GATE = list(park_wide = "The 2024 period displayed some portion of the estuary in good condition for surface water chlorophyll-<em>a</em>, which had not been observed since 2018. Observations were otherwise consistent with previous index periods where some portion of the estuary was in fair condition and a similar portion in poor condition."
+  GATE = list(park_wide = "The 2024 period displayed some portion of the estuary in good condition, which had not been observed since 2018. Observations were otherwise consistent with previous index periods when some portion of the estuary was in fair condition and a similar portion in poor condition."
   ),
   COLO = list(park_wide = NULL, 
-    `Thoroughfare` =  " 2023 conditions were consistent with previous two index periods, when a majority of the estuarine area has been in poor condition, and some proportion in fair condition. 2023 conditions showed an increase in fair condition area and a decrease in poor condition area compared to the previous index period." , 
-    `Tidal Creeks` = "2023 conditions showed a marked improvement from the previous two index periods, when a large majority of the estuarine area had been in poor condition, and some proportion in fair condition. 2023 conditions showed an increase in fair condition area and a decrease in poor condition area. This 2023 observation is more similar to the majority condition distribution from 2014-2018."
+    `Thoroughfare` =  "2023 conditions were consistent with the previous two index periods, when a majority of the estuarine area has been in poor condition, and some proportion in fair condition. 2023 conditions showed an increase in fair condition area and a decrease in poor condition area compared to the previous index period." , 
+    `Tidal Creeks` = "2023 conditions showed a notable improvement from the previous two index periods, when a large majority of the estuarine area had been in poor condition, and some proportion in fair condition. 2023 conditions showed an increase in fair condition area and a decrease in poor condition area. This 2023 observation is more similar to the majority condition distribution from 2014-2018."
   ),
-  GEWA = list(park_wide = "2021 conditions were consistent with the previous index periods, where there has been a significant majority of the estuarine area in poor condition for surface water chlorophyll-<em>a</em>. 2021 conditions were slightly improved from the last sampling year, with a decrease in poor condition areas and an increase in fair condition areas. There has only been one year (2011) with any percentage of the estuarine area in good condition for surface water chlorophyll-<em>a</em>."
+  GEWA = list(park_wide = "2021 conditions were consistent with the previous index periods, when a significant majority of the estuarine area was in poor condition. 2021 conditions were slightly improved from the last sampling year, with a decrease in poor condition areas and an increase in fair condition areas. There has only been one year (2011) with any percentage of the estuarine area in good condition."
   ),
-  ASIS = list(park_wide = "2024 conditions show a significant improvement from previous years, with a majority of the area in good condition for the first time since the study began."
+  ASIS = list(park_wide = "2024 conditions show a notable variation from previous years, with a majority of the area in good condition for the first time since the study began."
   )
 )
 
 kd_commentary <- list(
-  FIIS = list(park_wide = "2025 conditions were consistent with previous index periods, where the majority condition fluctuated between fair and poor. 2014 was the only year where there was a majority of the sampled estuarine area in good condition."
+  FIIS = list(park_wide = "2025 conditions were consistent with previous index periods, when the majority condition has been fair. 2014 was the only year when there was a majority of the sampled estuarine area in good condition."
   ),
   CACO = list(
     park_wide     = NULL,
     `Pleasant Bay` = "2025 conditions were consistent with previous index periods since 2012, with a majority of the area in good condition and most of the remaining area in fair condition, but 2025 did have a small portion in poor condition. During the 2007 through 2011 index periods, some portion of the estuarine area had poor light attenuation or was missing data.",
-    `Nauset Harbor` = "2025 conditions declined somewhat from recent index periods, with a slight majority of the estuarine area in good condition, however, with an increase in the proportion of the sampled area with fair and poor light condition.",
+    `Nauset Harbor` = "2025 conditions declined somewhat from recent index periods, with a slight majority of the estuarine area in good condition, however, with an increase in the proportion of the sampled area in fair and poor condition.",
     `Salt Ponds`   = "2025 conditions were consistent with previous index periods, with a slight decline since 2018. There have been only four index periods when there was no proportion of the monitored estuarine area in poor condition."
   ),
-  GATE = list(park_wide = "2024 conditions show an increase in good and poor condition areas and a decrease in fair condition areas, as compared to the previous index period. Historically, there has been some portion of the estuary in all three condition categories except in 2003 when there was no area in poor condition."
+  GATE = list(park_wide = "2024 conditions show an increase in good and poor condition areas and a decrease in fair condition areas, as compared to the previous index period."
   ),
   COLO = list(park_wide = NULL, 
-    `Thoroughfare` = "2023 conditions were consistent with all previous index periods, where 100% of the stratum has been in poor condition.", 
-    `Tidal Creeks` = "2023 conditions were consistent with all previous index periods, where 100% of the stratum has been in poor condition."),
-  GEWA = list(park_wide = "2021 conditions were consistent with all previous index periods, where the estuarine area has been entirely in poor condition, except for 2015 when a small portion was in fair condition."
+    `Thoroughfare` = "2023 conditions were consistent with all previous index periods, when 100% of the stratum has been in poor condition.", 
+    `Tidal Creeks` = "2023 conditions were consistent with all previous index periods, when 100% of the stratum has been in poor condition."),
+  GEWA = list(park_wide = "2021 conditions were consistent with all previous index periods, when the estuarine area has been almost entirely in poor condition."
   ),
-  ASIS = list(park_wide = "The 2024 index period was consistent with the previous year, with a slight decrease in poor condition and an increase in fair condition. Historically, there has been a majority of the sampled area in poor condition except for 2014, 2022, and 2024 when there was no majority condition category."
+  ASIS = list(park_wide = "The 2024 index period was consistent with the previous year, with a slight decrease in poor condition and an increase in fair condition. Historically, there has been a majority of the sampled area in poor/fair condition. 2024 had the least amount of area failing in the poor category than any other year."
   )
 )
 
@@ -270,24 +313,40 @@ kd_commentary <- list(
 # afterward, bolded, in its own highlighted box, on its own line for one final
 # summary sentence.
 conclusion_commentary <- list(
-  FIIS = list(body = "In 2025, Fire Island National Seashore saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition for the monitored estuarine area. Historically, bottom water dissolved oxygen levels have been good for all of the monitored estuarine area in the FIIS sample system, besides a few years with missing data.There was a slight increase in area in good condition for both for both surface water chlorophyll-<em>a</em> concentration and water column light attenuation compared to the previous sampling year.", 
-    closing = "Conditions of chlorophyll-<em>a</em> and light attenuation indicate that the estuary continues to experience estuarine nutrient enrichment."
+  FIIS = list(body = "In 2025, Fire Island National Seashore saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. 
+The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition for the monitored estuarine area. Historically, bottom water dissolved oxygen condition has been good for almost all of the monitored estuarine area. 
+Although most aspects of water quality were typically classified as being fair to good, there were several years between 2003 and 2017 in which more than 50% of the monitored area was in poor condition with respect to chlorophyll-<em>a</em> concentrations and water clarity. However, there appears to be a positive pattern in light attenuation improving from 2017-2025, with the area in good condition increasing each year.", 
+    closing = "Conditions of surface water chlorophyll-<em>a</em> and light attenuation indicate that the estuary continues to experience estuarine nutrient enrichment."
     ),
   CACO = list(
-    body = "In 2025, Cape Cod National Seashore saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation across monitored strata.The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition in each of the three strata. Poor conditions were observed only in the salt ponds. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the CACO sample systems. In terms of surface water chlorophyll-<em>a</em>, the majority of the area in all strata was in good condition, with some portion of the Pleasant Bay stratum missing data and some portion of the salt ponds stratum in poor condition. It is notable that for the first time since monitoring began, chlorophyll-<em>a</em> was in good condition for 100% of the sampled area in Nauset Harbor. Nauset Harbor contained a lesser majority percentage of good condition than Pleasant Bay and the salt ponds, with Nauset Harbor also having a higher proportion of the stratum in poor condition. Light attenuation in Pleasant Bay was in poor condition in some portion of the sampled area for the first time since 2011.",
+    body = "In 2025, Cape Cod National Seashore saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation across monitored strata. 
+The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition in each of the three strata. Poor conditions were observed only in the salt ponds. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the CACO sample systems. 
+In terms of surface water chlorophyll-<em>a</em>, the majority of the area in all strata was in good condition, with some portion of the Pleasant Bay stratum missing data and some portion of the salt ponds stratum in poor condition. It is notable that for the first time since monitoring began, chlorophyll-<em>a</em> was in good condition for 100% of the sampled area in Nauset Harbor. Nauset Harbor contained a lesser majority percentage of good condition than Pleasant Bay and the salt ponds, with Nauset Harbor also having a higher proportion of the stratum in poor condition. 
+Light attenuation in Pleasant Bay was in poor condition in some portion of the sampled area for the first time since 2011.",
     closing = "Conditions of these three status indicators at Cape Cod National Seashore in 2025 indicate that the estuarine systems are experiencing varying degrees of nutrient over-enrichment and water quality varies considerably among the strata."
   ),
-  GATE = list(body = "In 2024, Gateway National Recreation Area saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. The majority of sampled area for bottom water dissolved oxygen concentration was in good condition. Historically, bottom water DO levels have been good for most of the GATE sample system. For surface water chlorophyll-<em>a</em>, the majority of the area was split between fair and poor condition. Observations, however, showed some portion of the estuary good condition area, which had not been observed since 2018. Water column light attenuation was fair throughout the majority of the sampled estuarine area. GATE saw an increase in both good and poor condition area in 2024.", 
-    closing = "Conditions of surface water chlorophyll-<em>a</em> and water column light attenuation at Gateway National Recreation Area in 2024 indicate that the estuarine system remains nutrient over-enriched."
+  GATE = list(body = "In 2024, Gateway National Recreation Area saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation.
+The majority of sampled area for bottom water dissolved oxygen concentration was in good condition. Historically, bottom water DO levels have been good for most of the GATE-JBU sample system. 
+For surface water chlorophyll-<em>a</em>, the majority of the area was split between fair and poor condition. Observations, however, showed some portion of the estuary in good condition, which had not been observed since 2018. 
+Water column light attenuation was fair throughout the majority of the sampled estuarine area. GATE saw an increase in both good and poor condition area in 2024.", 
+    closing = "Conditions of surface water chlorophyll-<em>a</em> and water column light attenuation at Gateway National Recreation Area in 2024 indicate that the estuarine system remains nutrient over-enriched. This is likely due to the intensely developed shoreline and watershed characteristics of Jamaica Bay. "
   ),
-  COLO = list(body = "In 2023, Colonial National Historic Site saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation across monitored strata.The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition in each stratum. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the COLO sample systems. The 2023 summer index period marked a switch in majority condition category for near surface water chlorophyll-<em>a</em> in the Tidal Creeks stratum from a majority poor to a majority fair, while Thoroughfare remained in a majority of poor condition. Since the study began, both Thoroughfare and Tidal Creeks strata have been in 100% poor condition for light attenuation in the water column.", 
+  COLO = list(body = "In 2023, Colonial National Historical Park saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation across monitored strata. 
+The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition in each stratum. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the COLO sample systems. 
+The 2023 summer index period marked a switch in majority condition category for near surface water chlorophyll-<em>a</em> in the Tidal Creeks stratum, from a majority poor to a majority fair. The Thoroughfare stratum remained in a majority of poor condition. 
+Since the study began, both Thoroughfare and Tidal Creeks strata have been in 100% poor condition for light attenuation in the water column.", 
     closing = "Conditions of surface water chlorophyll-<em>a</em> and water column light attenuation at Colonial National Historic Site in 2023 indicate that the estuarine system remains nutrient over-enriched."
   ),
-  GEWA = list(body = "In 2021, the George Washington Birthplace National Monument saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. The majority of sampled estuarine area for GEWA was in good condition for bottom water dissolved oxygen concentration. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the GEWA sample system. For surface water chlorophyll-<em>a</em> and water column light attenuation, however, the majority of the area remains in poor condition.", 
+  GEWA = list(body = "In 2021, the George Washington Birthplace National Monument saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. 
+The majority of sampled estuarine area for GEWA was in good condition for bottom water dissolved oxygen concentration. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the GEWA sample system. 
+For surface water chlorophyll-<em>a</em> and water column light attenuation, however, the majority of the area remains in poor condition.", 
     closing = "Surface water chlorophyll-<em>a</em> and water column light attenuation condition at GEWA in 2021 show Popes Creek remains a eutrophic system. The restricted flushing at the flood-tide delta at its mouth traps eroded sediment and nutrient-rich residential and agricultural runoff from surrounding lands and the Potomac River. Nutrient entrapment within the estuary leads to eutrophication."
   ),
-  ASIS = list(body = "In 2024, Assateague Island National Seashore saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. The majority of sampled estuarine area for ASIS was in good condition for bottom water dissolved oxygen concentration. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the ASIS  sample system. For surface water chlorophyll-<em>a</em>, there was a notable improvement, marking the first year of a majority good condition since monitoring began in this system. Water column light attenuation, however, remains largely in fair and poor condition.",
-    closing = "Despite a decrease in poor condition area from previous index periods, the sampled estuarine area remains nutrient over-enriched due to light attenuation conditions."
+  ASIS = list(body = "In 2024, Assateague Island National Seashore saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. 
+The majority of sampled estuarine area for ASIS was in good condition for bottom water dissolved oxygen concentration. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the ASIS sample system. 
+There was a notable improvement in surface water chlorophyll-<em>a</em>, marking the first year of a majority good condition since monitoring began in this system. 2024’s shift to a good condition-majority varies from a long multi-decade pattern of fair/poor condition-majority. 
+Water column light attenuation appears to be improving, as the percent of estuarine area in poor condition has dropped notably over the past three index periods, with 2024 having the least area in poor condition since the study began. However, the monitored estuarine area remains largely in fair and poor condition, contributing to the park's over-enriched status.",
+    closing = "Despite a decrease in poor condition area from previous index periods, the sampled estuarine area remains nutrient over-enriched due to water column light attenuation conditions."
     )
 )
 
@@ -575,7 +634,7 @@ body, p {
 .quick-dive-box {
   background-color: #EAF2F8;
   border-left: 5px solid #2E86C1;
-  padding: 12px 18px;
+  padding: 17px 23px;
   margin-bottom: 20px;
 }
 .resources-box {
@@ -615,7 +674,7 @@ body, p {
   border: 1px solid #cccccc;
 }
 .site-map-float {
-  float: right;
+  float: center;
   width: 42%;
   margin-left: 24px;
   margin-bottom: 10px;
@@ -679,12 +738,12 @@ body, p {
 ## Shallow Dive
 
 ::: quick-dive-box
-Many of our coastal parks are home to dynamic estuaries, where saltwater meets freshwater. These waters also experience the detrimental effects of estuarine nutrient enrichment, largely from human activities, that impact water quality. The Northeast Coastal and Barrier Network (NCBN) parks depend on high-quality aquatic resources to sustain complex estuarine and near-shore ecosystems.
+Many of our coastal parks are home to dynamic estuaries, where saltwater meets freshwater. These waters also experience the detrimental effects of estuarine nutrient enrichment, largely from human activities, that impact water quality. Nutrient over-enrichment is the excessive accumulation of nutrients, such as nitrogen and phosphorus, which leads to over-growth of algae. The Northeast Coastal and Barrier Network (NCBN) parks depend on high-quality aquatic resources to sustain complex estuarine and near-shore ecosystems. Read more about our water quality monitoring program by [visiting our website](https://home.nps.gov/im/ncbn/estuarine-water-quality.htm) and learn more about [estuarine nutrient enrichment through our infographic](https://www.nps.gov/articles/000/what-we-mean-when-we-talk-about-estuarine-nutrient-enrichment.htm) series.
 :::
 
 ### Condition of Majority of Sampled Area
 
-:::::: majority-flex
+::::: majority-flex
 :::: majority-text-col
 ```{r condition-note, results='asis'}
 if (length(concern_indicators) == 0) {
@@ -699,44 +758,35 @@ if (length(concern_indicators) == 0) {
 
 ```{r scorecard-table}
 kable(scorecard_display,
-      caption = paste0(params$park_code, " Indicator Report Card — ", current_year),
+      caption = paste0(" Table 1. Indicator Report Card — ", "
+      ", current_year, " ",params$park_code),
       align = "lc", escape = FALSE, format = "html") %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered"))
 ```
 
 ::: resources-box
-**Additional Resources:** Our [water quality dashboard](https://www.nps.gov/im/ncbn/water-quality-dashboard.htm) provides an interactive visualizer for this data and that of our other parks.
+**Additional Resources:** Our [water quality dashboard](https://nps.maps.arcgis.com/apps/dashboards/1c76987071374af4ba10084e0448e23a) provides an interactive visualizer for this data and that of our other parks.
 :::
 ::::
-
-::: majority-photo-col
-<img src="../Assets/Field_photo_1.jpg" alt="Park staff collects water quality data in one of the monitored estuaries."/>
-
-<p class="fig-caption">
-
-Park staff collects water quality data in one of the monitored estuaries. Photo courtesy of Michaela Compo/NPS.
-
-</p>
-:::
-::::::
+:::::
 
 ------------------------------------------------------------------------
 
 ## Site Context
 
-```{r site-map-path, include=FALSE}
-site_map_path <- paste0("../Assets/", site_map_files[[params$park_code]])
-```
-
-::: site-map-float
-<img src="`r site_map_path`" alt="Map of the estuarine monitoring area" class="site-map-img"/>
+::::: site-map-float
+:::: majority-flex
+::: majority-photo-col
+![Park staff collects water quality data in one of the monitored estuaries.](../Assets/Field_photo_1.jpg){alt="Park staff collects water quality data in one of the monitored estuaries."}
 
 <p class="fig-caption">
 
-Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nutrient enrichment.
+Park staff collects water quality data in one of the monitored estuaries. *Credit: Michaela Compo/NPS.*
 
 </p>
 :::
+::::
+:::::
 
 `r site_context_text[[params$park_code]]`
 
@@ -744,7 +794,7 @@ The threat of nutrient enrichment is a primary management concern. Water quality
 
 Presented here are condition status summaries of three key response indicators:
 
-1.  Bottom water dissolved oxygen (DO)
+1.  Bottom water dissolved oxygen
 2.  Surface water chlorophyll-*a*
 3.  Water column light attenuation (K<sub>d</sub>)
 
@@ -755,12 +805,9 @@ if (is_multi_stratum) {
 }
 ```
 
-Threshold values are used to determine "good," "fair," and "poor" condition categories (Table 1), which are consistent with those used by the US Environmental Protection Agency (USEPA) for national coastal condition reporting (USEPA 2001b, 2004) and thresholds used by the National Oceanic and Atmospheric Association for the National Estuarine Eutrophication Assessment (Bricker et al. 1999).
+Threshold values are used to determine "good," "fair," and "poor" condition categories (Table 2), which are consistent with those used by the US Environmental Protection Agency (USEPA) for national coastal condition reporting (USEPA 2001b, 2004) and thresholds used by the National Oceanic and Atmospheric Association for the National Estuarine Eutrophication Assessment (Bricker et al. 1999).
 
-Water clarity is expressed as K<sub>d</sub> (m<sup>-1</sup>). Cutoff values of K<sub>d</sub> have been calculated from the USEPA criteria for turbidity, using the thresholds for areas with significant submerged aquatic vegetation (SAV).
-
-::: clear-float
-:::
+Light attenuation through the water column, or water clarity, is expressed as K<sub>d</sub> (m<sup>-1</sup>) coefficient. Cutoff values (Table 2) for the three condition categories of K<sub>d</sub> have been calculated from the USEPA criteria for turbidity, using the thresholds for areas with significant submerged aquatic vegetation (SAV).
 
 ```{r table1-thresholds}
 thresholds_df <- data.frame(
@@ -770,12 +817,34 @@ thresholds_df <- data.frame(
   Poor = c("< 2 mg/L", "> 20 \u00b5g/L", "> 1.61 m<sup>-1</sup>")
 )
 
-kable(thresholds_df, format = "html", caption = "Table 1: Threshold values associated with each measured nutrient enrichment condition category.", align = "lccc", escape = FALSE) %>%
+kable(thresholds_df, format = "html", caption = "Table 2: Threshold values associated with each measured nutrient enrichment condition category.", align = "lccc", escape = FALSE) %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered")) %>%
   column_spec(2, background = "#E6F7F1") %>%
   column_spec(3, background = "#FDFBE0") %>%
   column_spec(4, background = "#FBE5DC")
 ```
+
+### Sampling Design
+
+`r sampling_design_text[[params$park_code]]`
+
+```{r site-map-path, include=FALSE}
+site_map_path <- paste0("../Assets/", site_map_files[[params$park_code]])
+```
+
+::::: majority-flex
+:::: majority-text-col
+::: site-map-float
+![](`r site_map_path`)
+
+<p class="fig-caption">
+
+Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nutrient enrichment.
+
+</p>
+:::
+::::
+:::::
 
 ------------------------------------------------------------------------
 
@@ -783,16 +852,20 @@ kable(thresholds_df, format = "html", caption = "Table 1: Threshold values assoc
 
 :::::: indicator-flex
 ::: indicator-text
-Bottom water DO concentration is an indirect indicator of nutrient load and direct indicator of estuarine water chemistry and organism health. Oxygen is consumed when microbial decomposers mineralize organic matter on and within estuarine sediments. When sediment organic matter increases due to nutrient over-enrichment, it can cause an overgrowth of nuisance algae. The resulting heightened microbial decomposition can lower DO concentrations in bottom waters. It can also lead to increased extent and duration of bottom water anoxia and toxic sulfide concentrations. Nutrient enrichment can, ultimately, impact fauna diversity and abundance and shift species dominance.
+Bottom water dissolved oxygen (DO) concentration is an indirect indicator of nutrient load and direct indicator of estuarine water chemistry and organism health.
+
+In estuaries, microbial decomposers consume oxygen when they break down organic matter on and within the sediment. When sediment organic matter increases due to nutrient over-enrichment, it can cause an overgrowth of nuisance algae.
+
+The excess of organic matter increases microbial breakdown and can lower DO concentrations in bottom water. It can also lead to increased extent and duration of bottom water anoxia and toxic sulfide concentrations. Low levels of dissolved oxygen and associated nutrient enrichment can, ultimately, impact fauna diversity and abundance and shift species dominance.
 
 ```{r do-section, results='asis'}
-if (is_multi_stratum) cat("#### System-wide\n\n")
+if (is_multi_stratum) cat("#### All Strata\n\n")
 
 cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
            " system-wide average bottom water dissolved oxygen concentrations were ",
-           build_do_sentence(do_df, "of the total sampled estuarine area", fig_ref = "Fig. 3",
+           build_do_sentence(do_df, "of the total sampled estuarine area", fig_ref = "Fig. 2",
                               manual_note = get_commentary(do_commentary, params$park_code, "park_wide")),
-           " The system-wide weighted mean concentration was **", round(current_do_val, 2), " mg/L** (Fig. 2).\n\n"))
+           " The system-wide weighted mean concentration was **", round(current_do_val, 2), " mg/L** (Fig. 3).\n\n"))
 
 if (is_multi_stratum) {
   for (sid in this_stratum_ids) {
@@ -800,7 +873,7 @@ if (is_multi_stratum) {
     strat_do_df <- pct_within_stratum(current_data, sid, "Condition_DO")
     cat(paste0("#### ", sname, "\n\n"))
     cat(paste0("Average bottom water DO concentration was ",
-               build_do_sentence(strat_do_df, paste0("of the ", sname, " stratum"), fig_ref = "Fig. 3",
+               build_do_sentence(strat_do_df, paste0("of the ", sname, " stratum"), fig_ref = "Fig. 2",
                                   manual_note = get_commentary(do_commentary, params$park_code, sname)), "\n\n"))
   }
 }
@@ -815,7 +888,7 @@ make_gauge(current_do_val, do_bands, 12, "mg/L", "Dissolved Oxygen (System-wide)
 
 <p class="fig-caption">
 
-Fig. 2: System-wide area-weighted mean bottom water dissolved oxygen concentration at `r params$park_name`, `r current_year` index period.
+Fig. 3: System-wide area-weighted mean bottom water dissolved oxygen concentration at `r params$park_name`, `r current_year` index period.
 
 </p>
 :::
@@ -837,7 +910,7 @@ if (is_multi_stratum) {
 
 <p class="fig-caption">
 
-Fig. 3: Bottom water dissolved oxygen concentration (mg/L) condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.
+Fig. 2: Bottom water dissolved oxygen concentration (mg/L) condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.
 
 </p>
 :::
@@ -849,16 +922,16 @@ Fig. 3: Bottom water dissolved oxygen concentration (mg/L) condition categories 
 
 :::::: indicator-flex
 ::: indicator-text
-Nutrient enrichment often stimulates phytoplankton production, leading to population growth. Phytoplankton growth is often nutrient-limited. Trends of increasing biomass can suggest increasing nutrient load. Surface water chlorophyll-<em>a</em> concentration is an indicator of phytoplankton population growth, nutrient enrichment, and overall water quality.
+Nutrient enrichment often stimulates phytoplankton production, leading to population growth. Phytoplankton growth is often nutrient-limited. Trends of increasing phytoplankton biomass can suggest increasing nutrient load. Surface water chlorophyll-<em>a</em> concentration is an indicator of phytoplankton population growth, nutrient enrichment, and overall water quality.
 
 ```{r chla-section, results='asis'}
-if (is_multi_stratum) cat("#### System-wide\n\n")
+if (is_multi_stratum) cat("#### All Strata\n\n")
 
 cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
            " system-wide average surface water chlorophyll-<em>a</em> concentration was ",
-           build_majority_sentence(chla_df, "of the sampled estuarine area", fig_ref = "Fig. 5",
+           build_majority_sentence(chla_df, "of the sampled estuarine area", fig_ref = "Fig. 4",
                                     manual_note = get_commentary(chla_commentary, params$park_code, "park_wide")),
-           " The system-wide weighted mean concentration was **", round(current_chla_val, 2), " \u00b5g/L** (Fig. 4).\n\n"))
+           " The system-wide weighted mean concentration was **", round(current_chla_val, 2), " \u00b5g/L** (Fig. 5).\n\n"))
 
 if (is_multi_stratum) {
   for (sid in this_stratum_ids) {
@@ -866,7 +939,7 @@ if (is_multi_stratum) {
     strat_chla_df <- pct_within_stratum(current_data, sid, "Condition_CHLA")
     cat(paste0("#### ", sname, "\n\n"))
     cat(paste0("Average surface water chlorophyll-<em>a</em> concentration was ",
-               build_majority_sentence(strat_chla_df, paste0("of the ", sname, " stratum"), fig_ref = "Fig. 5",
+               build_majority_sentence(strat_chla_df, paste0("of the ", sname, " stratum"), fig_ref = "Fig. 4",
                                         manual_note = get_commentary(chla_commentary, params$park_code, sname)), "\n\n"))
   }
 }
@@ -881,7 +954,7 @@ make_gauge(current_chla_val, chla_bands, 30, "\u00b5g/L", "Chlorophyll-<em>a</em
 
 <p class="fig-caption">
 
-Fig. 4: System-wide area-weighted mean surface water chlorophyll-<em>a</em> concentration at `r params$park_name`, `r current_year` index period.
+Fig. 5: System-wide area-weighted mean surface water chlorophyll-<em>a</em> concentration at `r params$park_name`, `r current_year` index period.
 
 </p>
 :::
@@ -903,7 +976,7 @@ if (is_multi_stratum) {
 
 <p class="fig-caption">
 
-Fig. 5: Surface water chlorophyll-<em>a</em> concentration (µg/L) condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.
+Fig. 4: Surface water chlorophyll-<em>a</em> concentration (µg/L) condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.
 
 </p>
 :::
@@ -915,16 +988,22 @@ Fig. 5: Surface water chlorophyll-<em>a</em> concentration (µg/L) condition cat
 
 :::::: indicator-flex
 ::: indicator-text
-Submerged aquatic vegetation (SAV) provide important ecosystem services. SAV productivity and distribution depend on light. Light attenuation through the water column is dependent on concentrations of phytoplankton, which can correlate with nutrient enrichment, and suspended inorganic and dissolved organic matter. Regardless of current SAV presence, NCBN continues to monitor this critical SAV parameter, as it provides information relevant to the overall estuarine eutrophication status.
+Light attenuation through the water column, represented here by coefficient K<sub>d</sub>, is dependent on concentrations of phytoplankton, which can correlate with nutrient enrichment, and suspended inorganic and dissolved organic matter.
+
+**High** **K**<sub>**d**</sub>**:** The water is more turbid, muddy, or full of algae. Light attenuates (fades) near the surface, leaving deeper areas dark.
+
+**Low K**<sub>**d**</sub>**:** The water is clearer. Light can penetrate deeper into the water column.
+
+Submerged aquatic vegetation (SAV) provides important ecosystem services, and their productivity and distribution depend on light. Regardless of current SAV presence, NCBN continues to monitor this critical SAV parameter, as it provides information relevant to the overall estuarine eutrophication status.
 
 ```{r kd-section, results='asis'}
-if (is_multi_stratum) cat("#### System-wide\n\n")
+if (is_multi_stratum) cat("#### All Strata\n\n")
 
 cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
            " system-wide average water column light attenuation (K<sub>d</sub>) was ",
-           build_majority_sentence(kd_df, "of the sampled estuarine area", fig_ref = "Fig. 7",
+           build_majority_sentence(kd_df, "of the sampled estuarine area", fig_ref = "Fig. 6",
                                     manual_note = get_commentary(kd_commentary, params$park_code, "park_wide")),
-           " The system-wide weighted mean K<sub>d</sub> was **", round(current_kd_val, 2), " m<sup>-1</sup>** (Fig. 6).\n\n"))
+           " The system-wide weighted mean K<sub>d</sub> was **", round(current_kd_val, 2), " m<sup>-1</sup>** (Fig. 7).\n\n"))
 
 if (is_multi_stratum) {
   for (sid in this_stratum_ids) {
@@ -932,7 +1011,7 @@ if (is_multi_stratum) {
     strat_kd_df <- pct_within_stratum(current_data, sid, "Condition_Kd")
     cat(paste0("#### ", sname, "\n\n"))
     cat(paste0("Average water column light attenuation was ",
-               build_majority_sentence(strat_kd_df, paste0("of the ", sname, " stratum"), fig_ref = "Fig. 7",
+               build_majority_sentence(strat_kd_df, paste0("of the ", sname, " stratum"), fig_ref = "Fig. 6",
                                         manual_note = get_commentary(kd_commentary, params$park_code, sname)), "\n\n"))
   }
 }
@@ -947,7 +1026,7 @@ make_gauge(current_kd_val, kd_bands, 2.5, "m\u207b\u00b9", "Light Attenuation (K
 
 <p class="fig-caption">
 
-Fig. 6: System-wide area-weighted mean water column light attenuation coefficient (K<sub>d</sub>) at `r params$park_name`, `r current_year` index period.
+Fig. 7: System-wide area-weighted mean water column light attenuation coefficient (K<sub>d</sub>) at `r params$park_name`, `r current_year` index period.
 
 </p>
 :::
@@ -969,7 +1048,7 @@ if (is_multi_stratum) {
 
 <p class="fig-caption">
 
-Fig. 7: Water column light attenuation, represented by coefficient K<sub>d</sub> (m<sup>-1</sup>), condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.
+Fig. 6: Water column light attenuation, represented by coefficient K<sub>d</sub> (m<sup>-1</sup>), condition categories by percent of total estuarine area`r if (is_multi_stratum) paste0(" of ", paste(this_stratum_names[as.character(this_stratum_ids)], collapse = ", "), " strata") else ""`, `r params$park_name`.
 
 </p>
 :::
@@ -991,24 +1070,22 @@ if (!is.null(concl$closing)) {
   cat("**", concl$closing, "**", sep = "")
   cat('\n\n</div>\n')
 }
-
-# Standard closing paragraph, shown for every park after its own closing box. This is
-# intentionally defined once here, rather than duplicated inside each park's conclusion_commentary
-# entry, so the wording and link stay consistent everywhere and only need to be updated in one
-# place if they ever change.
-cat('\n\nThese briefs are intended to provide a snapshot of the most recent water quality monitoring data available from NCBN. Continued monitoring will help clarify whether these observed changes in condition represent isolated index-period variation or the start of a longer-term pattern. For in-depth trend analysis of this data, [click here](https://www.nps.gov/articles/000/2021-estuarine-nutrient-enrichment-status-report-fire-island-ns.htm) to view NCBN\'s Water Quality Trend Reports.\n\n')
 ```
+
+The continued monitoring of estuarine nutrient enrichment vital signs will be essential for managers to make informed decisions, develop effective mitigation measures, reduce management costs, and provide a means of measuring progress towards goals.
+
+These briefs are intended to provide a snapshot of the most recent water quality monitoring data available from NCBN. Continued monitoring will help clarify whether these observed changes in condition represent isolated index-period variation or the start of a longer-term pattern. For in-depth trend analysis of this data, [read NCBN's Water Quality Trend Reports.](https://irma.nps.gov/DataStore/Collection/Profile/10039)
 
 ------------------------------------------------------------------------
 
 ::: {style="font-size: 0.85em; color: #555;"}
-**Data source:** The data referenced in this brief is available [here](#) *(placeholder — add DataStore or dashboard hyperlink)*.
+**Data source:** The [data referenced in this brief is available here](https://irma.nps.gov/DataStore/Reference/Profile/2317824).
+
+**Dashboard:** [NCBN Water Quality Monitoring](https://nps.maps.arcgis.com/apps/dashboards/1c76987071374af4ba10084e0448e23a)
 
 **Citation notes:**
 
 -   Kopp, B.S. and H. Neckles. 2009. *A Protocol for Monitoring Estuarine Nutrient Enrichment*. National Park Service.
 -   USEPA. 2001b, 2004. National Coastal Condition Reports.
 -   Bricker, S.B. et al. 1999. National Estuarine Eutrophication Assessment. NOAA.
-
-*Trend reports available here: [Add link for trend reports](https://www.nps.gov/articles/000/2021-estuarine-nutrient-enrichment-status-report-fire-island-ns.htm)*
 :::
