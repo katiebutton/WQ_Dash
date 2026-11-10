@@ -24,6 +24,7 @@ output:
       before_body:
         - ../Assets/header.html
 date: "`r format(Sys.time(), '%B %d, %Y')`"
+lang: en-US
 params:
   data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
   park_code: "FIIS"
@@ -32,7 +33,7 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-# VERSION MARKER
+
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
 library(readxl)
 library(dplyr)
@@ -45,6 +46,14 @@ library(kableExtra)
 
 condition_colors <- c("Good" = "#009E73", "Fair" = "#F0E442", "Poor" = "#D55E00", "Missing" = "#9E9E9E")
 condition_levels <- c("Good", "Fair", "Poor", "Missing")
+
+# Display label for the GATE unit specific code in auto-generated text, tables, and chart titles.
+park_display_codes <- c(GATE = "GATE-JBU")
+park_label <- if (params$park_code %in% names(park_display_codes)) {
+  unname(park_display_codes[params$park_code])
+} else {
+  params$park_code
+}
 ```
 
 ```{r load-data}
@@ -155,26 +164,31 @@ get_pct <- function(df, cond) {
   round(val, 1)
 }
 
+# Returns the majority condition(s). If categories tie (compared at the same 1-decimal
+# rounding used in the report text), ALL tied categories are returned, in Good/Fair/Poor order.
 majority_condition <- function(df) {
   scored <- df %>% filter(Condition %in% c("Good", "Fair", "Poor"))
   if (nrow(scored) == 0 || all(scored$Percent == 0)) return(NA_character_)
-  as.character(scored$Condition[which.max(scored$Percent)])
+  pct <- round(scored$Percent, 1)
+  as.character(scored$Condition[pct == max(pct)])
+}
+
+# Display label for the scorecard: "Good", or "Good/Poor (tie)" when categories tie.
+majority_label <- function(maj) {
+  if (length(maj) == 0 || is.na(maj[1])) return(NA_character_)
+  if (length(maj) == 1) return(maj)
+  paste0(paste(maj, collapse = "/"), " (tie)")
 }
 
 do_majority   <- majority_condition(do_df)
 chla_majority <- majority_condition(chla_df)
 kd_majority   <- majority_condition(kd_df)
 
-if (!is.null(prior_data)) {
-  do_prior_df   <- pct_by_condition(prior_data, "Condition_DO")
-  chla_prior_df <- pct_by_condition(prior_data, "Condition_CHLA")
-  kd_prior_df   <- pct_by_condition(prior_data, "Condition_Kd")
-}
-
+# An indicator is flagged as a concern if ANY of its majority (or tied-majority) categories is not Good
 concern_indicators <- c(
-  if (!is.na(do_majority)   && do_majority   != "Good") "bottom water dissolved oxygen",
-  if (!is.na(chla_majority) && chla_majority != "Good") "surface water chlorophyll-<em>a</em>",
-  if (!is.na(kd_majority)   && kd_majority   != "Good") "water column light attenuation"
+  if (!is.na(do_majority[1])   && any(do_majority   != "Good")) "bottom water dissolved oxygen",
+  if (!is.na(chla_majority[1]) && any(chla_majority != "Good")) "surface water chlorophyll-<em>a</em>",
+  if (!is.na(kd_majority[1])   && any(kd_majority   != "Good")) "water column light attenuation"
 )
 
 # Park-specific Site Context paragraphs, keyed by park_code.
@@ -226,14 +240,6 @@ Because each sampling location statistically represents a proportional share of 
 Sampling occurred during a four-week summer index period (July–August), timed to coincide with the warm-season conditions when the effects of nutrient enrichment, including low dissolved oxygen, elevated chlorophyll-<em>a</em>, and reduced water clarity, are typically most pronounced. NCBN has been monitoring water quality at ASIS biennially since 2005.
 
 Because each sampling location statistically represents a proportional share of the surrounding estuary, results can be scaled up to describe conditions across the full monitored area. The area-weighted mean (Figs. 3, 5, 7) reflects this approach, calculating an average condition value weighted by the amount of estuary each station represents. Similarly, the percent of total estuarine area in each condition category (Figs. 2, 4, 6) reflects the proportion of the estuary's surface area represented by stations falling into good, fair, or poor condition."
-)
-
-
-
-# Site map image filenames, keyed by park_code. Files live in Assets/ as [PARK CODE]_MAP.png
-site_map_files <- setNames(
-  paste0(c("FIIS", "CACO", "GATE", "COLO", "GEWA", "ASIS"), "_MAP.png"),
-  c("FIIS", "CACO", "GATE", "COLO", "GEWA", "ASIS")
 )
 
 # MANUAL INTERPRETIVE COMMENTARY -- keyed by park_code.
@@ -335,7 +341,7 @@ Water column light attenuation was fair throughout the majority of the sampled e
 The majority of sampled estuarine area for bottom water dissolved oxygen concentration was in good condition in each stratum. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the COLO sample systems. 
 The 2023 summer index period marked a switch in majority condition category for near surface water chlorophyll-<em>a</em> in the Tidal Creeks stratum, from a majority poor to a majority fair. The Thoroughfare stratum remained in a majority of poor condition. 
 Since the study began, both Thoroughfare and Tidal Creeks strata have been in 100% poor condition for light attenuation in the water column.", 
-    closing = "Conditions of surface water chlorophyll-<em>a</em> and water column light attenuation at Colonial National Historic Site in 2023 indicate that the estuarine system remains nutrient over-enriched."
+    closing = "Conditions of surface water chlorophyll-<em>a</em> and water column light attenuation at Colonial National Historical Park in 2023 indicate that the estuarine system remains nutrient over-enriched."
   ),
   GEWA = list(body = "In 2021, the George Washington Birthplace National Monument saw varying conditions of bottom water dissolved oxygen, near surface water chlorophyll-<em>a</em>, and water column light attenuation. 
 The majority of sampled estuarine area for GEWA was in good condition for bottom water dissolved oxygen concentration. Historically, bottom water dissolved oxygen levels have been good for most of the estuarine area in the GEWA sample system. 
@@ -360,20 +366,29 @@ get_commentary <- function(commentary_list, park_code, key) {
 ```
 
 ```{r scorecard-data}
-weighted_score <- function(df) {
-  get_pct(df, "Good") * 1.0 + get_pct(df, "Fair") * 0.5 + get_pct(df, "Poor") * 0.0
-}
-
-trend_arrow <- function(delta) {
-  if (is.na(delta)) return("—")
-  if (delta > 3) return("Improved")
-  if (delta < -3) return("Declined")
-  "Stable"
+# Color-coded "badge" for a scorecard cell, using the same colors as the charts and gauges.
+# A tie is shown as a split badge (one color block per tied category).
+condition_badge <- function(maj) {
+  if (length(maj) == 0 || is.na(maj[1])) {
+    return(paste0('<span style="display:inline-block; min-width:7.5em; padding:3px 12px; border-radius:4px; font-weight:bold; color:#212121; background:',
+                  condition_colors[["Missing"]], ';">No data</span>'))
+  }
+  cols <- unname(condition_colors[maj])
+  bg <- if (length(cols) == 1) {
+    cols
+  } else {
+    n <- length(cols)
+    stops <- paste0(cols, " ", round(100 * (seq_len(n) - 1) / n), "%, ",
+                    cols, " ", round(100 * seq_len(n) / n), "%", collapse = ", ")
+    paste0("linear-gradient(90deg, ", stops, ")")
+  }
+  paste0('<span style="display:inline-block; min-width:7.5em; padding:3px 12px; border-radius:4px; font-weight:bold; color:#212121; background:',
+         bg, ';">', majority_label(maj), '</span>')
 }
 
 scorecard_df <- data.frame(
   Indicator = c("Dissolved Oxygen", "Chlorophyll-<em>a</em>", "Water Clarity (K<sub>d</sub>)"),
-  Condition = c(do_majority, chla_majority, kd_majority),
+  Condition = c(condition_badge(do_majority), condition_badge(chla_majority), condition_badge(kd_majority)),
   stringsAsFactors = FALSE
 )
 
@@ -404,7 +419,7 @@ build_do_sentence <- function(df, area_label, fig_ref = NULL, manual_note = NULL
     p <- get_pct(df, c)
     if (p > 0) {
       clause <- paste0(tolower(c), " within ", p, "%")
-      if (!is.na(majority) && c == majority) clause <- paste0("**", clause, "**")
+      if (c %in% majority) clause <- paste0("**", clause, "**")
       parts <- c(parts, clause)
     }
   }
@@ -422,14 +437,14 @@ build_do_sentence <- function(df, area_label, fig_ref = NULL, manual_note = NULL
 # citation. Optional manual_note is appended after.
 build_majority_sentence <- function(df, area_label, fig_ref = NULL, manual_note = NULL) {
   majority <- majority_condition(df)
-  if (is.na(majority)) return("No condition data are available for this area.")
+  if (is.na(majority[1])) return("No condition data are available for this area.")
 
   parts <- c()
   for (c in c("Good", "Fair", "Poor", "Missing")) {
     p <- get_pct(df, c)
     if (p > 0) {
       clause <- paste0(tolower(c), " within ", p, "%")
-      if (c == majority) clause <- paste0("**", clause, "**")
+      if (c %in% majority) clause <- paste0("**", clause, "**")
       parts <- c(parts, clause)
     }
   }
@@ -625,12 +640,61 @@ kd_legend_labels <- c(
 )
 ```
 
+```{r alt-text}
+# Plain-language alt text for the charts and gauges (Section 508). Built from the same data the
+# figures use, so it updates automatically with the park and year.
+pct_summary <- function(df) {
+  parts <- c()
+  for (cn in c("Good", "Fair", "Poor", "Missing")) {
+    p <- get_pct(df, cn)
+    if (p > 0) parts <- c(parts, paste0(p, "% ", tolower(cn)))
+  }
+  join_list_with_and(parts)
+}
+
+alt_trend <- function(indicator, df) {
+  yrs <- range(park_data$Sample_Year, na.rm = TRUE)
+  strata_txt <- if (is_multi_stratum) {
+    paste0(", shown separately for the ",
+           join_list_with_and(unname(this_stratum_names[as.character(this_stratum_ids)])), " strata")
+  } else ""
+  paste0("Horizontal stacked bar chart of ", indicator,
+         " condition (good, fair, poor, or missing) as a percent of sampled estuarine area at ",
+         params$park_name, " for each index period from ", yrs[1], " to ", yrs[2], strata_txt,
+         ". The ", current_year, " bar is outlined. System-wide in ", current_year,
+         ", the sampled area was ", pct_summary(df),
+         ". Current-year percentages are also given in the text.")
+}
+
+alt_gauge <- function(indicator, value, unit, bands, thresholds) {
+  i <- which(value >= bands$from & value <= bands$to)[1]
+  range_txt <- if (is.na(i)) "beyond the end of the displayed scale" else
+    paste0("in the ", tolower(bands$label[i]), " range")
+  paste0("Semicircular gauge of the system-wide area-weighted mean ", indicator, " at ",
+         params$park_name, " in ", current_year, ": ", round(value, 2), " ", unit,
+         ", ", range_txt, ". ", thresholds)
+}
+
+do_bar_alt   <- alt_trend("bottom water dissolved oxygen", do_df)
+chla_bar_alt <- alt_trend("surface water chlorophyll-a", chla_df)
+kd_bar_alt   <- alt_trend("water column light attenuation (Kd)", kd_df)
+
+do_gauge_alt <- alt_gauge("bottom water dissolved oxygen concentration", current_do_val,
+                          "milligrams per liter", do_bands,
+                          "Good is above 5, fair is 2 to 5, and poor is below 2 milligrams per liter.")
+chla_gauge_alt <- alt_gauge("surface water chlorophyll-a concentration", current_chla_val,
+                            "micrograms per liter", chla_bands,
+                            "Good is below 5, fair is 5 to 20, and poor is above 20 micrograms per liter.")
+kd_gauge_alt <- alt_gauge("water column light attenuation coefficient (Kd)", current_kd_val,
+                          "per meter", kd_bands,
+                          "Good is below 0.92, fair is 0.92 to 1.61, and poor is above 1.61 per meter.")
+```
+
 ```{=html}
 <style>
 body, p {
   text-align: justify;
 }
-.status-table td, .status-table th { text-align: center; vertical-align: middle; }
 .quick-dive-box {
   background-color: #EAF2F8;
   border-left: 5px solid #2E86C1;
@@ -641,7 +705,9 @@ body, p {
   background-color: #F5EFE6;
   border-left: 5px solid #8B6F47;
   padding: 12px 18px;
-  margin-top: 12px;
+  width: 75%;
+  max-width: 100%;
+  margin: 12px auto 0 auto;
 }
 .conclusion-box {
   background-color: #F0F1F3;
@@ -674,10 +740,20 @@ body, p {
   border: 1px solid #cccccc;
 }
 .site-map-float {
-  float: center;
-  width: 42%;
-  margin-left: 24px;
-  margin-bottom: 10px;
+  width: 60%;
+  margin: 0 auto 10px auto;
+}
+.site-photo-right {
+  float: right;
+  width: 38%;
+  margin: 0 0 12px 24px;
+}
+.site-photo-right img {
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid #cccccc;
+  display: block;
 }
 .site-map-img {
   width: 100%;
@@ -747,21 +823,22 @@ Many of our coastal parks are home to dynamic estuaries, where saltwater meets f
 :::: majority-text-col
 ```{r condition-note, results='asis'}
 if (length(concern_indicators) == 0) {
-  cat(paste0("*All three response indicators at ", params$park_code, " were in good condition during the ",
+  cat(paste0("*All three response indicators at ", park_label, " were in good condition during the ",
              current_year, " index period.*"))
 } else {
   cat(paste0("*Condition of ", paste(concern_indicators, collapse = " and "),
-             " at ", params$park_code, " in ", current_year,
+             " at ", park_label, " in ", current_year,
              " indicates that the estuarine system remains nutrient over-enriched.*"))
 }
 ```
 
 ```{r scorecard-table}
 kable(scorecard_display,
-      caption = paste0(" Table 1. Indicator Report Card — ", "
-      ", current_year, " ",params$park_code),
+      caption = paste0("Table 1: Indicator Report Card — ", current_year, " ", park_label),
       align = "lc", escape = FALSE, format = "html") %>%
-  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered"))
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "bordered")) %>%
+  column_spec(1, width = "15em") %>%
+  column_spec(2, width = "13em")
 ```
 
 ::: resources-box
@@ -774,10 +851,9 @@ kable(scorecard_display,
 
 ## Site Context
 
-::::: site-map-float
-:::: majority-flex
-::: majority-photo-col
-![Park staff collects water quality data in one of the monitored estuaries.](../Assets/Field_photo_1.jpg)
+::: site-photo-right
+<img src="../Assets/Field_photo_1.jpg" alt="Park staff collecting water quality data in one of the monitored estuaries.">
+
 
 <p class="fig-caption">
 
@@ -785,8 +861,6 @@ Park staff collects water quality data in one of the monitored estuaries. *Credi
 
 </p>
 :::
-::::
-:::::
 
 `r site_context_text[[params$park_code]]`
 
@@ -824,18 +898,27 @@ kable(thresholds_df, format = "html", caption = "Table 2: Threshold values assoc
   column_spec(4, background = "#FBE5DC")
 ```
 
+<div class="clear-float"></div>
+
 ### Sampling Design
 
 `r sampling_design_text[[params$park_code]]`
 
-```{r site-map-path, include=FALSE}
-site_map_path <- paste0("../Assets/", site_map_files[[params$park_code]])
-```
-
 ::::: majority-flex
 :::: majority-text-col
 ::: site-map-float
-![](%60r%20site_map_path%60)
+```{r site-map, results='asis'}
+site_map_path <- file.path("..", "Assets", paste0(params$park_code, "_MAP.png"))
+
+if (!file.exists(site_map_path)) {
+  stop("Site map not found for ", params$park_code, ": ", normalizePath(site_map_path, mustWork = FALSE))
+}
+
+site_map_alt <- paste0("Map of the ", params$park_name,
+                       " estuarine area that is monitored for nutrient enrichment.")
+
+cat(sprintf('<img src="%s" alt="%s" class="site-map-img">\n', site_map_path, site_map_alt))
+```
 
 <p class="fig-caption">
 
@@ -861,7 +944,7 @@ The excess of organic matter increases microbial breakdown and can lower DO conc
 ```{r do-section, results='asis'}
 if (is_multi_stratum) cat("#### All Strata\n\n")
 
-cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
+cat(paste0("During the ", current_year, " summer index period, ", park_label,
            " system-wide average bottom water dissolved oxygen concentrations were ",
            build_do_sentence(do_df, "of the total sampled estuarine area", fig_ref = "Fig. 2",
                               manual_note = get_commentary(do_commentary, params$park_code, "park_wide")),
@@ -882,7 +965,7 @@ if (is_multi_stratum) {
 
 :::: indicator-gauge
 ::: fig-wrap
-```{r do-gauge, fig.width=5, fig.height=5}
+```{r do-gauge, fig.width=5, fig.height=5, fig.alt=do_gauge_alt}
 make_gauge(current_do_val, do_bands, 12, "mg/L", "Dissolved Oxygen (System-wide)")
 ```
 
@@ -897,13 +980,13 @@ Fig. 3: System-wide area-weighted mean bottom water dissolved oxygen concentrati
 
 :::: indicator-bar-full
 ::: fig-wrap
-```{r do-bar, fig.width=if (is_multi_stratum) max(9, 3.2 * n_strata_park) else 5, fig.height=5}
+```{r do-bar, fig.width=if (is_multi_stratum) max(9, 3.2 * n_strata_park) else 5, fig.height=5, fig.alt=do_bar_alt}
 if (is_multi_stratum) {
   plot_trend_faceted(do_trend_strata, current_year,
-                      paste0(params$park_code, " Bottom Water DO — Historic Condition by Stratum"),
+                      paste0(park_label, " Bottom Water DO — Historic Condition by Stratum"),
                       legend_labels = do_legend_labels)
 } else {
-  plot_trend(do_trend, current_year, paste0(params$park_code, " Bottom Water DO — Historic Condition"),
+  plot_trend(do_trend, current_year, paste0(park_label, " Bottom Water DO — Historic Condition"),
              legend_labels = do_legend_labels)
 }
 ```
@@ -927,7 +1010,7 @@ Nutrient enrichment often stimulates phytoplankton production, leading to popula
 ```{r chla-section, results='asis'}
 if (is_multi_stratum) cat("#### All Strata\n\n")
 
-cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
+cat(paste0("During the ", current_year, " summer index period, ", park_label,
            " system-wide average surface water chlorophyll-<em>a</em> concentration was ",
            build_majority_sentence(chla_df, "of the sampled estuarine area", fig_ref = "Fig. 4",
                                     manual_note = get_commentary(chla_commentary, params$park_code, "park_wide")),
@@ -948,7 +1031,7 @@ if (is_multi_stratum) {
 
 :::: indicator-gauge
 ::: fig-wrap
-```{r chla-gauge, fig.width=5, fig.height=5}
+```{r chla-gauge, fig.width=5, fig.height=5, fig.alt=chla_gauge_alt}
 make_gauge(current_chla_val, chla_bands, 30, "\u00b5g/L", "Chlorophyll-<em>a</em> (System-wide)")
 ```
 
@@ -963,13 +1046,13 @@ Fig. 5: System-wide area-weighted mean surface water chlorophyll-<em>a</em> conc
 
 :::: indicator-bar-full
 ::: fig-wrap
-```{r chla-bar, fig.width=if (is_multi_stratum) max(9, 3.2 * n_strata_park) else 5, fig.height=5}
+```{r chla-bar, fig.width=if (is_multi_stratum) max(9, 3.2 * n_strata_park) else 5, fig.height=5, fig.alt=chla_bar_alt}
 if (is_multi_stratum) {
   plot_trend_faceted(chla_trend_strata, current_year,
-                      paste0(params$park_code, " Chlorophyll-<em>a</em> — Historic Condition by Stratum"),
+                      paste0(park_label, " Chlorophyll-<em>a</em> — Historic Condition by Stratum"),
                       legend_labels = chla_legend_labels)
 } else {
-  plot_trend(chla_trend, current_year, paste0(params$park_code, " Chlorophyll-<em>a</em> — Historic Condition"),
+  plot_trend(chla_trend, current_year, paste0(park_label, " Chlorophyll-<em>a</em> — Historic Condition"),
              legend_labels = chla_legend_labels)
 }
 ```
@@ -999,7 +1082,7 @@ Submerged aquatic vegetation (SAV) provides important ecosystem services, and th
 ```{r kd-section, results='asis'}
 if (is_multi_stratum) cat("#### All Strata\n\n")
 
-cat(paste0("During the ", current_year, " summer index period, ", params$park_code,
+cat(paste0("During the ", current_year, " summer index period, ", park_label,
            " system-wide average water column light attenuation (K<sub>d</sub>) was ",
            build_majority_sentence(kd_df, "of the sampled estuarine area", fig_ref = "Fig. 6",
                                     manual_note = get_commentary(kd_commentary, params$park_code, "park_wide")),
@@ -1020,7 +1103,7 @@ if (is_multi_stratum) {
 
 :::: indicator-gauge
 ::: fig-wrap
-```{r kd-gauge, fig.width=5, fig.height=5}
+```{r kd-gauge, fig.width=5, fig.height=5, fig.alt=kd_gauge_alt}
 make_gauge(current_kd_val, kd_bands, 2.5, "m\u207b\u00b9", "Light Attenuation (K<sub>d</sub>) (System-wide)")
 ```
 
@@ -1035,13 +1118,13 @@ Fig. 7: System-wide area-weighted mean water column light attenuation coefficien
 
 :::: indicator-bar-full
 ::: fig-wrap
-```{r kd-bar, fig.width=if (is_multi_stratum) max(9, 3.2 * n_strata_park) else 5, fig.height=5}
+```{r kd-bar, fig.width=if (is_multi_stratum) max(9, 3.2 * n_strata_park) else 5, fig.height=5, fig.alt=kd_bar_alt}
 if (is_multi_stratum) {
   plot_trend_faceted(kd_trend_strata, current_year,
-                      paste0(params$park_code, " Light Attenuation (K<sub>d</sub>) — Historic Condition by Stratum"),
+                      paste0(park_label, " Light Attenuation (K<sub>d</sub>) — Historic Condition by Stratum"),
                       legend_labels = kd_legend_labels)
 } else {
-  plot_trend(kd_trend, current_year, paste0(params$park_code, " Light Attenuation (K<sub>d</sub>) — Historic Condition"),
+  plot_trend(kd_trend, current_year, paste0(park_label, " Light Attenuation (K<sub>d</sub>) — Historic Condition"),
              legend_labels = kd_legend_labels)
 }
 ```
@@ -1062,7 +1145,9 @@ Fig. 6: Water column light attenuation, represented by coefficient K<sub>d</sub>
 concl <- conclusion_commentary[[params$park_code]]
 
 if (!is.null(concl$body)) {
-  cat(" ", concl$body)
+  # Turn single line breaks in the body text into paragraph breaks
+  body_text <- gsub("\\s*\n\\s*", "\n\n", trimws(concl$body))
+  cat(body_text, "\n\n", sep = "")
 }
 
 if (!is.null(concl$closing)) {
@@ -1072,6 +1157,7 @@ if (!is.null(concl$closing)) {
 }
 ```
 
+ 
 The continued monitoring of estuarine nutrient enrichment vital signs will be essential for managers to make informed decisions, develop effective mitigation measures, reduce management costs, and provide a means of measuring progress towards goals.
 
 These briefs are intended to provide a snapshot of the most recent water quality monitoring data available from NCBN. Continued monitoring will help clarify whether these observed changes in condition represent isolated index-period variation or the start of a longer-term pattern. For in-depth trend analysis of this data, [read NCBN's Water Quality Trend Reports.](https://irma.nps.gov/DataStore/Collection/Profile/10039)
