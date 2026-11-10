@@ -777,7 +777,7 @@ kable(scorecard_display,
 ::::: site-map-float
 :::: majority-flex
 ::: majority-photo-col
-![Park staff collects water quality data in one of the monitored estuaries.](../Assets/Field_photo_1.jpg){alt="Park staff collects water quality data in one of the monitored estuaries."}
+![Park staff collects water quality data in one of the monitored estuaries.](../Assets/Field_photo_1.jpg)
 
 <p class="fig-caption">
 
@@ -835,7 +835,7 @@ site_map_path <- paste0("../Assets/", site_map_files[[params$park_code]])
 ::::: majority-flex
 :::: majority-text-col
 ::: site-map-float
-![](`r site_map_path`)
+![](%60r%20site_map_path%60)
 
 <p class="fig-caption">
 
