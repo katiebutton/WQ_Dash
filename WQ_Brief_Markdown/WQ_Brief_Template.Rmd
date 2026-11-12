@@ -27,13 +27,13 @@ date: "`r format(Sys.time(), '%B %d, %Y')`"
 lang: en-US
 params:
   data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
-  park_code: "FIIS"
-  park_name: "Fire Island National Seashore"
-  sample_year: "2025"
+  park_code: "COLO"
+  park_name: "Colonial National Historical Park"
+  sample_year: "2023"
 ---
 
 ```{r setup, include=FALSE}
-
+# VERSION MARKER
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
 library(readxl)
 library(dplyr)
@@ -47,7 +47,8 @@ library(kableExtra)
 condition_colors <- c("Good" = "#009E73", "Fair" = "#F0E442", "Poor" = "#D55E00", "Missing" = "#9E9E9E")
 condition_levels <- c("Good", "Fair", "Poor", "Missing")
 
-# Display label for the GATE unit specific code in auto-generated text, tables, and chart titles.
+# Display label for the park code in auto-generated text, tables, and chart titles.
+# The data filter, file names, and text lookups still use params$park_code (e.g., "GATE").
 park_display_codes <- c(GATE = "GATE-JBU")
 park_label <- if (params$park_code %in% names(park_display_codes)) {
   unname(park_display_codes[params$park_code])
@@ -740,8 +741,8 @@ body, p {
   border: 1px solid #cccccc;
 }
 .site-map-float {
-  width: 60%;
-  margin: 0 auto 10px auto;
+  width: 100%;
+  margin: 0 0 10px 0;
 }
 .site-photo-right {
   float: right;
@@ -904,8 +905,6 @@ kable(thresholds_df, format = "html", caption = "Table 2: Threshold values assoc
 
 `r sampling_design_text[[params$park_code]]`
 
-::::: majority-flex
-:::: majority-text-col
 ::: site-map-float
 ```{r site-map, results='asis'}
 site_map_path <- file.path("..", "Assets", paste0(params$park_code, "_MAP.png"))
@@ -926,8 +925,6 @@ Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nut
 
 </p>
 :::
-::::
-:::::
 
 ------------------------------------------------------------------------
 
@@ -1157,7 +1154,6 @@ if (!is.null(concl$closing)) {
 }
 ```
 
- 
 The continued monitoring of estuarine nutrient enrichment vital signs will be essential for managers to make informed decisions, develop effective mitigation measures, reduce management costs, and provide a means of measuring progress towards goals.
 
 These briefs are intended to provide a snapshot of the most recent water quality monitoring data available from NCBN. Continued monitoring will help clarify whether these observed changes in condition represent isolated index-period variation or the start of a longer-term pattern. For in-depth trend analysis of this data, [read NCBN's Water Quality Trend Reports.](https://irma.nps.gov/DataStore/Collection/Profile/10039)
