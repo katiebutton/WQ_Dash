@@ -27,9 +27,9 @@ date: "`r format(Sys.time(), '%B %d, %Y')`"
 lang: en-US
 params:
   data_file: "Z:/WASO/Programs/IMD/NCBN/Files/MONITORING/Estuarine_Eutrophication/02_MASTER/Database/Water_quality_database/current/03_Certified_LoggerData/Certified_Spatial_Data/2025/2025_Final_Master_ENE_Dashboard.xlsx"
-  park_code: "COLO"
-  park_name: "Colonial National Historical Park"
-  sample_year: "2023"
+  park_code: "ASIS"
+  park_name: "Assateague Island National Seashore"
+  sample_year: "2024"
 ---
 
 ```{r setup, include=FALSE}
@@ -715,6 +715,7 @@ body, p {
   border-left: 5px solid #5A6472;
   padding: 12px 18px;
   margin-top: 12px;
+  margin-bottom: 24px;
 }
 .majority-flex {
   display: flex;
@@ -762,6 +763,10 @@ body, p {
   border-radius: 4px;
   border: 1px solid #cccccc;
   display: block;
+}
+.site-map-portrait {
+  width: 60%;
+  margin: 0 auto;
 }
 .map-caption {
   font-size: 0.5em;
@@ -914,14 +919,26 @@ if (!file.exists(site_map_path)) {
 }
 
 site_map_alt <- paste0("Map of the ", params$park_name,
-                       " estuarine area that is monitored for nutrient enrichment.")
+                       " estuarine area monitored for nutrient enrichment, showing the park boundaries and the locations of the continuous, spatial, and trend sampling stations, which are marked as hexagons.")
 
-cat(sprintf('<img src="%s" alt="%s" class="site-map-img">\n', site_map_path, site_map_alt))
+# Read the PNG's pixel width/height straight from its header (no extra packages needed)
+png_dims <- function(path) {
+  con <- file(path, "rb")
+  on.exit(close(con))
+  readBin(con, "raw", 16)
+  w <- readBin(con, "integer", 1, size = 4, endian = "big")
+  h <- readBin(con, "integer", 1, size = 4, endian = "big")
+  c(w, h)
+}
+map_dims <- png_dims(site_map_path)
+map_class <- if (map_dims[2] > map_dims[1]) "site-map-img site-map-portrait" else "site-map-img"
+
+cat(sprintf('<img src="%s" alt="%s" class="%s">\n', site_map_path, site_map_alt, map_class))
 ```
 
 <p class="fig-caption">
 
-Fig. 1: Map of the `r params$park_name` estuarine area that is monitored for nutrient enrichment.
+Fig. 1: Map of the `r params$park_name` estuarine area monitored for nutrient enrichment, showing park boundaries and the sampling design.
 
 </p>
 :::
